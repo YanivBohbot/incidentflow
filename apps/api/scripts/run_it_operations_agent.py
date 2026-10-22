@@ -4,7 +4,8 @@ import argparse
 
 from langchain_openai.chat_models.base import OpenAIAuthenticationError
 
-from incidentflow.agents.agents_it_operations import build_it_operations_agent
+from incidentflow.agent.agents_specialist.it_operations import build_it_operations_agent
+from incidentflow.agent.identities import IT_OPERATIONS_AGENT
 
 DEFAULT_INCIDENT = (
     "The Payment API has returned HTTP 500 errors since this morning. "
@@ -25,6 +26,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     agent = build_it_operations_agent()
+    print(f"Running {IT_OPERATIONS_AGENT.display_name}...")
 
     try:
         result = agent.invoke(

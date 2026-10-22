@@ -1,8 +1,12 @@
-from incidentflow.agents.agents_it_operations import (
-    build_it_operations_agent,
-    search_incident_tickets,
+from incidentflow.agent.agents_specialist.contracts import (
+    InvestigationEvidence,
+    ITOperationsFinding,
 )
-from incidentflow.agents.models import InvestigationEvidence, ITOperationsFinding
+from incidentflow.agent.agents_specialist.it_operations import (
+    build_it_operations_agent,
+)
+from incidentflow.agent.identities import IT_OPERATIONS_AGENT
+from incidentflow.agent.tools.jira import search_incident_tickets
 from incidentflow.core.config import get_settings
 
 
@@ -23,7 +27,8 @@ def test_it_operations_agent_builds_without_a_model_request(monkeypatch) -> None
 
     agent = build_it_operations_agent()
 
-    assert agent.name == "it_operations_agent"
+    assert agent.name == IT_OPERATIONS_AGENT.technical_name
+    assert IT_OPERATIONS_AGENT.display_name == "IT Operations Agent"
 
 
 def test_it_operations_finding_separates_evidence_from_hypotheses() -> None:
