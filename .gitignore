@@ -1,0 +1,70 @@
+
+# ==========================================
+# IncidentFlow - Git Ignore
+# ==========================================
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Python testing and tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# Node.js / React
+node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+.next/
+.vite/
+coverage/
+*.tsbuildinfo
+
+# Logs
+*.log
+logs/
+
+# IDE and editors
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local data and temporary files
+tmp/
+temp/
+*.sqlite3
+*.db
+
+# Docker local overrides
+docker-compose.override.yml
+compose.override.yaml
