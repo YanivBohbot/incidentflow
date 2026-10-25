@@ -59,3 +59,61 @@ class DataIntelligenceFinding(BaseModel):
         le=1,
         description="Confidence in the technical assessment, from 0.0 to 1.0.",
     )
+
+
+class KnowledgeFinding(BaseModel):
+    summary: str = Field(
+        description="Concise recommendation grounded in the retrieved documentation."
+    )
+    relevant_documents: list[str] = Field(
+        default_factory=list,
+        description="Titles or stable identifiers of the retrieved documents.",
+    )
+    evidence: list[InvestigationEvidence] = Field(
+        default_factory=list,
+        description="Source-attributed excerpts or facts retrieved from documentation.",
+    )
+    recommended_steps: list[str] = Field(
+        default_factory=list,
+        description="Read-only or approval-required next steps derived from the evidence.",
+    )
+    limitations: list[str] = Field(
+        default_factory=list,
+        description="Gaps, missing documents, or constraints in the available knowledge.",
+    )
+    confidence: float = Field(
+        ge=0,
+        le=1,
+        description="Confidence in the documentation-grounded recommendation, from 0.0 to 1.0.",
+    )
+
+
+class InvestigationReport(BaseModel):
+    summary: str = Field(
+        description="Consolidated incident assessment based on specialist findings."
+    )
+    agents_consulted: list[str] = Field(
+        default_factory=list,
+        description="Technical names of the specialists consulted for this report.",
+    )
+    evidence: list[InvestigationEvidence] = Field(
+        default_factory=list,
+        description="Source-attributed evidence collected from specialist findings.",
+    )
+    hypotheses: list[str] = Field(
+        default_factory=list,
+        description="Unverified explanations, kept separate from observed evidence.",
+    )
+    proposed_actions: list[str] = Field(
+        default_factory=list,
+        description="Recommendations only; no action is executed by this report.",
+    )
+    limitations: list[str] = Field(
+        default_factory=list,
+        description="Known gaps, conflicts, or simulated-source limitations.",
+    )
+    confidence: float = Field(
+        ge=0,
+        le=1,
+        description="Confidence in the consolidated report, from 0.0 to 1.0.",
+    )
