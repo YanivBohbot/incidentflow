@@ -1,0 +1,45 @@
+{
+  "realm": "incidentflow",
+  "enabled": true,
+  "displayName": "IncidentFlow",
+  "roles": {
+    "realm": [
+      {"name": "OPERATOR", "description": "Create incidents and run investigations."},
+      {"name": "INCIDENT_MANAGER", "description": "Approve or reject proposed Jira actions."},
+      {"name": "ADMIN", "description": "Manage IncidentFlow access and configuration."}
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "incidentflow-web",
+      "name": "IncidentFlow Web",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:5173/*"],
+      "webOrigins": ["http://localhost:5173"],
+      "protocolMappers": [
+        {
+          "name": "incidentflow-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "incidentflow-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "incidentflow-api",
+      "name": "IncidentFlow API",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "bearerOnly": true
+    }
+  ]
+}
