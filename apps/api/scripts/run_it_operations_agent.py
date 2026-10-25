@@ -1,11 +1,14 @@
-"""Run the read-only IT Operations agent against a sample incident."""
+"""Run the read-only IT Operations agent against a live Jira MCP connection."""
 
 import argparse
+import asyncio
 
 from langchain_openai.chat_models.base import OpenAIAuthenticationError
 
 from incidentflow.agent.agents_specialist.it_operations import build_it_operations_agent
 from incidentflow.agent.identities import IT_OPERATIONS_AGENT
+from incidentflow.agent.mcp_clients.jira import JiraMCPClient
+from incidentflow.core.config import get_settings
 
 DEFAULT_INCIDENT = (
     "The Payment API has returned HTTP 500 errors since this morning. "
@@ -23,19 +26,20 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> int:
-    args = parse_args()
-    agent = build_it_operations_agent()
-    print(f"Running {IT_OPERATIONS_AGENT.display_name}...")
+async def run(incident: str) -> None:
+    settings = get_settings()
+    if not settings.jira_mcp_enabled:
+        raise RuntimeError("Set JIRA_MCP_ENABLED=true before running this live Jira demo.")
 
-    try:
-        result = agent.invoke(
-            {"messages": [{"role": "user", "content": args.incident}]},
-            config={"recursion_limit": 6},
+    async with JiraMCPClient(settings.jira_mcp_url).read_tools() as tool_set:
+        agent = build_it_operations_agent(tool_set.read_tools)
+        result = await agent.ainvoke(
+            {"messages": [{"role": "user", "content": incident}]},
+            config={
+                "recursion_limit": 6,
+                "configurable": {"thread_id": "it-operations-read-demo"},
+            },
         )
-    except OpenAIAuthenticationError:
-        print("OpenAI authentication failed. Verify OPENAI_API_KEY without printing it.")
-        return 1
 
     for message in result["messages"]:
         print(f"\n[{message.type}]")
@@ -44,6 +48,20 @@ def main() -> int:
     finding = result["structured_response"]
     print("\n[structured_response]")
     print(finding.model_dump_json(indent=2))
+
+
+def main() -> int:
+    args = parse_args()
+    print(f"Running {IT_OPERATIONS_AGENT.display_name}...")
+
+    try:
+        asyncio.run(run(args.incident))
+    except OpenAIAuthenticationError:
+        print("OpenAI authentication failed. Verify OPENAI_API_KEY without printing it.")
+        return 1
+    except RuntimeError as error:
+        print(error)
+        return 1
 
     return 0
 

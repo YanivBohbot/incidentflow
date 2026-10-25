@@ -1,3 +1,5 @@
+from langchain_core.tools import tool
+
 from incidentflow.agent.agents_specialist.contracts import (
     InvestigationEvidence,
     ITOperationsFinding,
@@ -6,18 +8,16 @@ from incidentflow.agent.agents_specialist.it_operations import (
     build_it_operations_agent,
 )
 from incidentflow.agent.identities import IT_OPERATIONS_AGENT
-from incidentflow.agent.tools.jira import search_incident_tickets
 from incidentflow.core.config import get_settings
 
 
-def test_simulated_ticket_search_is_explicitly_labeled() -> None:
-    result = search_incident_tickets.invoke({"service_name": "Payment API"})
+@tool("searchJiraIssuesUsingJql")
+def search_jira_issues_using_jql(jql: str) -> str:
+    """Search live Jira issues using JQL."""
+    return f"Fixture Jira result for {jql}"
 
-    assert result.startswith("SIMULATED DATA")
-    assert "Payment API" in result
 
-
-def test_it_operations_agent_builds_without_a_model_request(monkeypatch) -> None:
+def test_it_operations_agent_builds_with_injected_jira_tools(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv(
         "DATABASE_URL",
@@ -25,7 +25,7 @@ def test_it_operations_agent_builds_without_a_model_request(monkeypatch) -> None
     )
     get_settings.cache_clear()
 
-    agent = build_it_operations_agent()
+    agent = build_it_operations_agent([search_jira_issues_using_jql])
 
     assert agent.name == IT_OPERATIONS_AGENT.technical_name
     assert IT_OPERATIONS_AGENT.display_name == "IT Operations Agent"

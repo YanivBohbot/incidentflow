@@ -1,20 +1,22 @@
+from langchain.agents.middleware import ToolCallLimitMiddleware
+from langchain_core.tools import tool
+
 from incidentflow.agent.agents_specialist.contracts import (
     DataIntelligenceFinding,
     InvestigationEvidence,
 )
 from incidentflow.agent.agents_specialist.data_intelligence import (
     build_data_intelligence_agent,
+    build_data_intelligence_middleware,
 )
 from incidentflow.agent.identities import DATA_INTELLIGENCE_AGENT
-from incidentflow.agent.tools.operational_events import search_operational_events
 from incidentflow.core.config import get_settings
 
 
-def test_simulated_operational_events_are_explicitly_labeled() -> None:
-    result = search_operational_events.invoke({"service_name": "Payment API"})
-
-    assert result.startswith("SIMULATED DATA")
-    assert "Payment API" in result
+@tool("find")
+def read_events() -> str:
+    """Read test events."""
+    return "event"
 
 
 def test_data_intelligence_agent_builds_without_a_model_request(monkeypatch) -> None:
@@ -25,9 +27,19 @@ def test_data_intelligence_agent_builds_without_a_model_request(monkeypatch) -> 
     )
     get_settings.cache_clear()
 
-    agent = build_data_intelligence_agent()
+    agent = build_data_intelligence_agent([read_events])
 
     assert agent.name == DATA_INTELLIGENCE_AGENT.technical_name
+    limiters = [
+        middleware
+        for middleware in build_data_intelligence_middleware()
+        if isinstance(middleware, ToolCallLimitMiddleware)
+    ]
+    assert {(limiter.tool_name, limiter.run_limit) for limiter in limiters} == {
+        ("collection-schema", 1),
+        ("aggregate", 1),
+        ("find", 1),
+    }
 
 
 def test_data_intelligence_finding_separates_events_from_causes() -> None:
@@ -37,9 +49,9 @@ def test_data_intelligence_finding_separates_events_from_causes() -> None:
         error_signatures=["database pool timeout"],
         evidence=[
             InvestigationEvidence(
-                source="simulated_mongodb",
+                source="MongoDB",
                 detail="Active connections reached the configured limit.",
-                source_status="simulated",
+                source_status="live",
             )
         ],
         suspected_root_causes=["Connection pool exhaustion."],
