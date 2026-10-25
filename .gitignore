@@ -65,6 +65,10 @@ temp/
 *.sqlite3
 *.db
 
+# Locally supplied incident-response knowledge. Keep only the empty placeholder in Git.
+apps/api/knowledge_sources/*
+!apps/api/knowledge_sources/.gitkeep
+
 # Docker local overrides
 docker-compose.override.yml
 compose.override.yaml

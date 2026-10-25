@@ -12,6 +12,7 @@ requires-python = ">=3.12,<3.14"
 dependencies = [
     # FastAPI
     "fastapi",
+    "beautifulsoup4",
     "uvicorn[standard]",
     "pydantic-settings",
 
@@ -22,9 +23,14 @@ dependencies = [
     # Database migrations
     "alembic>=1.14,<2.0",
 
-    "langchain>=1.0,<2.0",
+    "langchain[mcp]>=1.4,<2.0",
+    "langchain-community",
     "langgraph>=1.0,<2.0",
     "langchain-openai>=1.0,<2.0",
+    "langchain-pinecone",
+    "langchain-text-splitters",
+    "langsmith>=0.4,<1.0",
+    "pypdf",
 
 ]
 
