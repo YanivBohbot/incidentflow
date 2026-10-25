@@ -3,6 +3,8 @@ from fastapi import FastAPI
 from incidentflow.api.routes.incidents import (
     router as incidents_router,
 )
+from incidentflow.api.routes.investigations import router as investigations_router
+from incidentflow.api.routes.jira import router as jira_router
 from incidentflow.core.config import get_settings
 
 
@@ -23,6 +25,8 @@ def create_app() -> FastAPI:
         incidents_router,
         prefix=settings.api_prefix,
     )
+    app.include_router(investigations_router, prefix=settings.api_prefix)
+    app.include_router(jira_router, prefix=settings.api_prefix)
 
     return app
 
