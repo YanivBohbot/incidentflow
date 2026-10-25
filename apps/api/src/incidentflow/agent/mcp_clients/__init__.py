@@ -1,1 +1,1 @@
-"""MCP client registry and least-privilege server adapters."""
+"""MCP clients for external IncidentFlow integrations."""

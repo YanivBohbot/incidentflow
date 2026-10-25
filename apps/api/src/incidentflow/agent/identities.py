@@ -29,5 +29,5 @@ DATA_INTELLIGENCE_AGENT = AgentIdentity(
 KNOWLEDGE_AGENT = AgentIdentity(
     technical_name="knowledge_agent",
     display_name="Knowledge Agent",
-    responsibility="Retrieves runbooks and internal technical documentation.",
+    responsibility="Retrieves incident response guides and technical documentation.",
 )
