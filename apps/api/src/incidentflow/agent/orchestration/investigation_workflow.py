@@ -67,7 +67,7 @@ def build_investigation_workflow(
         try:
             result = supervisor.invoke(
                 {"messages": [{"role": "user", "content": state["incident_request"]}]},
-                config={"recursion_limit": 10},
+                config={"recursion_limit": 14},
             )
         except OpenAIAuthenticationError:
             return {
