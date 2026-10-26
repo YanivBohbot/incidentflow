@@ -66,6 +66,10 @@ class InvestigationRepository:
         )
         return [self.to_domain(orm) for orm in self.session.scalars(statement).all()]
 
+    def list_investigations(self) -> list[Investigation]:
+        statement = select(InvestigationORM).order_by(InvestigationORM.created_at.desc())
+        return [self.to_domain(orm) for orm in self.session.scalars(statement).all()]
+
     def mark_running(self, investigation_id: UUID) -> Investigation | None:
         orm = self.session.get(InvestigationORM, investigation_id)
         if orm is None:

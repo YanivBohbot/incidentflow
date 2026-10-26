@@ -38,6 +38,9 @@ class InvestigationService:
     def get_investigation(self, investigation_id: UUID) -> Investigation | None:
         return self.repository.get_investigation(investigation_id)
 
+    def list_investigations(self) -> list[Investigation]:
+        return self.repository.list_investigations()
+
     def run_investigation(self, data: InvestigationCreate) -> Investigation:
         investigation = self.repository.create_investigation(data)
         running = self.repository.mark_running(investigation.id)
@@ -53,12 +56,14 @@ class InvestigationService:
                 },
                 config={"configurable": {"thread_id": running.workflow_thread_id}},
             )
-        except Exception:
-            self.repository.fail_investigation(
+        except Exception:  # noqa: BLE001 - convert unpredictable external workflow errors to state.
+            failed = self.repository.fail_investigation(
                 running.id,
                 "Workflow execution failed before a report was produced.",
             )
-            raise
+            if failed is None:
+                raise RuntimeError("Failed investigation could not be persisted.")
+            return failed
 
         report = result["report"]
         if result["investigation_lifecycle"] == "completed" and report is not None:

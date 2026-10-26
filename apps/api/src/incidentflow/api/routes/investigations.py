@@ -33,6 +33,11 @@ InvestigationServiceDep = Annotated[InvestigationService, Depends(get_investigat
 router = APIRouter(prefix="/investigations", tags=["Investigations"])
 
 
+@router.get("", response_model=list[Investigation])
+def list_investigations(service: InvestigationServiceDep) -> list[Investigation]:
+    return service.list_investigations()
+
+
 @router.post("", response_model=Investigation, status_code=status.HTTP_201_CREATED)
 def start_investigation(
     data: InvestigationStart, service: InvestigationServiceDep

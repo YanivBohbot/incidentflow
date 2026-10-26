@@ -1,5 +1,6 @@
 import os
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -21,6 +22,15 @@ class Settings(BaseSettings):
     jira_mcp_url: str = "https://mcp.atlassian.com/v2/mcp?tools=all"
     jira_mcp_enabled: bool = False
     jira_mcp_write_enabled: bool = False
+    github_mcp_transport: Literal["http", "stdio"] = "stdio"
+    github_mcp_url: str | None = None
+    github_mcp_command: str = "docker.exe" if os.name == "nt" else "docker"
+    github_mcp_command_args: str = (
+        "run,-i,--rm,-p,127.0.0.1:8085:8085,-e,GITHUB_OAUTH_CALLBACK_PORT=8085,"
+        "-e,GITHUB_READ_ONLY=1,ghcr.io/github/github-mcp-server"
+    )
+    github_mcp_enabled: bool = False
+    github_mcp_repositories: str = ""
     mongodb_mcp_url: str = "http://127.0.0.1:3000/mcp"
     mongodb_mcp_enabled: bool = False
     mongodb_mcp_database: str = "incidentflow_dev"
@@ -42,6 +52,30 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @property
+    def github_mcp_allowed_repositories(self) -> tuple[str, ...]:
+        """Return the configured comma-separated repository allowlist."""
+        return tuple(
+            repository.strip()
+            for repository in self.github_mcp_repositories.split(",")
+            if repository.strip()
+        )
+
+    @property
+    def github_mcp_stdio_arguments(self) -> tuple[str, ...]:
+        """Return the configured comma-separated Docker command arguments."""
+        return tuple(
+            argument.strip()
+            for argument in self.github_mcp_command_args.split(",")
+            if argument.strip()
+        )
+
+    @property
+    def github_mcp_is_configured(self) -> bool:
+        if self.github_mcp_transport == "http":
+            return bool(self.github_mcp_url)
+        return bool(self.github_mcp_command and self.github_mcp_stdio_arguments)
 
 
 @lru_cache
