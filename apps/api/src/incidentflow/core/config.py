@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     jira_mcp_url: str = "https://mcp.atlassian.com/v2/mcp?tools=all"
     jira_mcp_enabled: bool = False
     jira_mcp_write_enabled: bool = False
+    mcp_oauth_token_store_dir: str | None = None
+    mcp_oauth_storage_encryption_key: str | None = None
     github_mcp_transport: Literal["http", "stdio"] = "stdio"
     github_mcp_url: str | None = None
     github_mcp_command: str = "docker.exe" if os.name == "nt" else "docker"
@@ -31,6 +33,7 @@ class Settings(BaseSettings):
     )
     github_mcp_enabled: bool = False
     github_mcp_repositories: str = ""
+    github_personal_access_token: str | None = None
     mongodb_mcp_url: str = "http://127.0.0.1:3000/mcp"
     mongodb_mcp_enabled: bool = False
     mongodb_mcp_database: str = "incidentflow_dev"

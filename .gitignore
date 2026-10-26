@@ -62,6 +62,7 @@ Desktop.ini
 # Local data and temporary files
 tmp/
 temp/
+.local/
 *.sqlite3
 *.db
 

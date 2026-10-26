@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass
+import os
 
 from fastmcp import Client
 from fastmcp.client import StdioTransport
@@ -48,16 +49,35 @@ class GitHubMCPClient:
         *,
         command: str | None = None,
         command_args: tuple[str, ...] = (),
+        personal_access_token: str | None = None,
     ) -> None:
         if not server_url and not command:
             raise ValueError("GitHub MCP requires either an HTTP URL or a stdio command.")
         self.server_url = server_url
         self.command = command
         self.command_args = command_args
+        self.personal_access_token = personal_access_token
 
     def _client(self) -> Client:
         if self.command:
-            return Client(StdioTransport(self.command, list(self.command_args)))
+            command_args = list(self.command_args)
+            environment = None
+            if self.personal_access_token:
+                image_position = next(
+                    (
+                        index
+                        for index, argument in enumerate(command_args)
+                        if argument.startswith("ghcr.io/github/github-mcp-server")
+                    ),
+                    len(command_args),
+                )
+                command_args[image_position:image_position] = (
+                    "-e",
+                    "GITHUB_PERSONAL_ACCESS_TOKEN",
+                )
+                environment = os.environ.copy()
+                environment["GITHUB_PERSONAL_ACCESS_TOKEN"] = self.personal_access_token
+            return Client(StdioTransport(self.command, command_args, env=environment))
         if self.server_url:
             return Client(self.server_url, auth="oauth")
         raise RuntimeError("GitHub MCP client has no configured transport.")

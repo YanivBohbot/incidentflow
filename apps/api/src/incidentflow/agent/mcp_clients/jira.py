@@ -4,8 +4,13 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass
+from pathlib import Path
 
 from fastmcp import Client
+from fastmcp.client.auth import OAuth
+from cryptography.fernet import Fernet
+from key_value.aio.stores.disk import DiskStore
+from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from langchain.mcp import MCPAdapter
 from langchain_core.tools import BaseTool
 
@@ -52,7 +57,30 @@ class JiraMCPClient:
         self.server_url = server_url
 
     def _client(self) -> Client:
-        return Client(self.server_url, auth="oauth")
+        return Client(self.server_url, auth=self._oauth_auth())
+
+    def _oauth_auth(self) -> str | OAuth:
+        """Use encrypted persistence only when both local OAuth settings are configured."""
+        from incidentflow.core.config import get_settings
+
+        settings = get_settings()
+        directory = settings.mcp_oauth_token_store_dir
+        encryption_key = settings.mcp_oauth_storage_encryption_key
+        if not directory and not encryption_key:
+            return "oauth"
+        if not directory or not encryption_key:
+            raise RuntimeError(
+                "Configure both MCP_OAUTH_TOKEN_STORE_DIR and "
+                "MCP_OAUTH_STORAGE_ENCRYPTION_KEY to persist Jira OAuth tokens."
+            )
+        return OAuth(
+            mcp_url=self.server_url,
+            client_name="IncidentFlow Jira MCP",
+            token_storage=FernetEncryptionWrapper(
+                key_value=DiskStore(directory=Path(directory).expanduser()),
+                fernet=Fernet(encryption_key.encode()),
+            ),
+        )
 
     @asynccontextmanager
     async def read_tools(self) -> AsyncIterator[JiraMCPToolSet]:

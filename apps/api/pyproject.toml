@@ -27,6 +27,8 @@ dependencies = [
     "langchain-community",
     "langgraph>=1.0,<2.0",
     "langchain-openai>=1.0,<2.0",
+    "diskcache",
+    "py-key-value-aio[disk]",
     "langchain-pinecone",
     "langchain-text-splitters",
     "langsmith>=0.4,<1.0",
