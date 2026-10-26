@@ -3,7 +3,11 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import AgentMiddleware, ToolCallLimitMiddleware
+from langchain.agents.middleware import (
+    AgentMiddleware,
+    ModelCallLimitMiddleware,
+    ToolCallLimitMiddleware,
+)
 from langchain.agents.structured_output import ToolStrategy
 from langchain.messages import ToolMessage
 from langchain.tools.tool_node import ToolCallRequest
@@ -86,19 +90,31 @@ class GitHubRepositoryAllowlistMiddleware(AgentMiddleware):
 
 
 def build_github_middleware(allowed_repositories: tuple[str, ...]) -> list[AgentMiddleware]:
-    """Bound GitHub reads so an investigation stays focused and inexpensive."""
+    """Bound GitHub reads and model turns so an investigation cannot loop."""
     return [
         *build_shared_middleware(),
         GitHubRepositoryAllowlistMiddleware(allowed_repositories),
+        # Four reads cover the deliberately small investigation plan: commits,
+        # pull requests, and up to two follow-up details.  This is a global
+        # ceiling in addition to the per-tool limits below.
+        ToolCallLimitMiddleware(run_limit=4, exit_behavior="continue"),
         *[
-            ToolCallLimitMiddleware(tool_name=tool_name, run_limit=1, exit_behavior="end")
+            ToolCallLimitMiddleware(tool_name=tool_name, run_limit=1, exit_behavior="continue")
             for tool_name in (
                 "list_commits",
                 "list_pull_requests",
                 "search_code",
             )
         ],
-        ToolCallLimitMiddleware(tool_name="pull_request_read", run_limit=2, exit_behavior="end"),
+        ToolCallLimitMiddleware(
+            tool_name="pull_request_read", run_limit=2, exit_behavior="continue"
+        ),
+        # A normal successful read path needs two or three model turns: select
+        # tools, interpret their results, then emit GitHubFinding.  A fourth
+        # turn leaves room for one corrective step while ensuring malformed or
+        # repeatedly rejected MCP calls end gracefully before LangGraph's
+        # emergency recursion limit is reached.
+        ModelCallLimitMiddleware(run_limit=4, exit_behavior="end"),
     ]
 
 
@@ -125,3 +141,15 @@ def build_github_agent(github_tools: list[BaseTool]):
         middleware=build_github_middleware(allowed_repositories),
         response_format=ToolStrategy(GitHubFinding),
     )
+
+
+def build_github_analysis_model():
+    """Build the one-shot structured analyser used after bounded GitHub reads."""
+    settings = get_settings()
+    model = ChatOpenAI(
+        model=settings.openai_model,
+        api_key=settings.openai_api_key,
+        temperature=0,
+        timeout=settings.openai_timeout_seconds,
+    )
+    return model.with_structured_output(GitHubFinding)

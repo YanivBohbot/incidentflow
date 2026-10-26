@@ -1,13 +1,13 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class InvestigationEvidence(BaseModel):
     source: str = Field(description="System or document that produced this evidence.")
     detail: str = Field(description="Exact, concise evidence returned by the source.")
-    source_status: Literal["simulated", "live"] = Field(
-        description="Whether the source is simulated or connected to a live system."
+    source_status: Literal["simulated", "live", "unavailable"] = Field(
+        description="Whether the source is simulated, live, or unavailable during the investigation."
     )
 
 
@@ -142,10 +142,22 @@ class InvestigationReport(BaseModel):
     )
     limitations: list[str] = Field(
         default_factory=list,
-        description="Known gaps, conflicts, or simulated-source limitations.",
+        description="Known gaps, conflicts, or source limitations.",
     )
     confidence: float = Field(
         ge=0,
         le=1,
         description="Confidence in the consolidated report, from 0.0 to 1.0.",
     )
+
+    @model_validator(mode="after")
+    def normalize_unavailable_source_statuses(self) -> "InvestigationReport":
+        """Keep integration outages distinct from simulated or live evidence."""
+        for evidence in self.evidence:
+            detail = evidence.detail.casefold()
+            if (
+                "mcp was unavailable during this investigation" in detail
+                or "retrieval was unavailable during this investigation" in detail
+            ):
+                evidence.source_status = "unavailable"
+        return self

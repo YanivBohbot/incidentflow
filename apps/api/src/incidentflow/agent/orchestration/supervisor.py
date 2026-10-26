@@ -4,6 +4,7 @@ from langchain.agents.middleware import (
     LLMToolSelectorMiddleware,
     ToolCallLimitMiddleware,
 )
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 
 from incidentflow.agent.agents_specialist.contracts import InvestigationReport
@@ -27,7 +28,7 @@ TOOL_SELECTION_SYSTEM_PROMPT = (
 )
 
 
-def build_supervisor_middleware(model: str | None = None) -> list[AgentMiddleware]:
+def build_supervisor_middleware(model: BaseChatModel | str | None = None) -> list[AgentMiddleware]:
     """Allow dynamic specialist selection while bounding repeated delegations."""
     return [
         LLMToolSelectorMiddleware(
@@ -62,6 +63,6 @@ def build_investigation_supervisor():
         tools=[ask_it_operations, ask_data_intelligence, ask_knowledge, ask_github],
         system_prompt=SUPERVISOR_SYSTEM_PROMPT,
         name=INVESTIGATION_SUPERVISOR.technical_name,
-        middleware=build_supervisor_middleware(settings.openai_model),
+        middleware=build_supervisor_middleware(model),
         response_format=InvestigationReport,
     )
