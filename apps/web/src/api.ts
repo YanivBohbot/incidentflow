@@ -14,6 +14,18 @@ export type Investigation = {
   error_message: string | null
 }
 
+export type JiraProposal = {
+  id: string
+  investigation_id: string
+  action: 'CREATE_ISSUE' | 'ADD_COMMENT'
+  state: 'PENDING' | 'EXECUTING' | 'EXECUTED' | 'FAILED' | 'REJECTED'
+  payload: Record<string, string>
+  result_payload: { operation: string; result: unknown } | null
+  error_message: string | null
+  approved_at: string | null
+  approved_by: string | null
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
     ...init,
@@ -32,4 +44,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ incident_id: incidentId, incident_request: incidentRequest }),
     }),
+  listInvestigations: () => request<Investigation[]>('/investigations'),
+  listJiraProposals: (investigationId: string) =>
+    request<JiraProposal[]>(`/jira/investigations/${investigationId}/proposals`),
+  approveJiraProposal: (proposalId: string) =>
+    request<JiraProposal>(`/jira/proposals/${proposalId}/approve`, { method: 'POST' }),
 }
