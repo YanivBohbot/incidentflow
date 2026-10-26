@@ -31,3 +31,9 @@ KNOWLEDGE_AGENT = AgentIdentity(
     display_name="Knowledge Agent",
     responsibility="Retrieves incident response guides and technical documentation.",
 )
+
+GITHUB_AGENT = AgentIdentity(
+    technical_name="github_agent",
+    display_name="GitHub Agent",
+    responsibility="Examines relevant recent commits and pull requests without modifying GitHub.",
+)
