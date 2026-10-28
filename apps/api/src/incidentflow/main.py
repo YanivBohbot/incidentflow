@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from incidentflow.agent.orchestration.checkpoints import open_postgres_checkpointer
 from incidentflow.agent.orchestration.investigation_workflow import build_investigation_workflow
+from incidentflow.agent.orchestration.jira_action_workflow import build_jira_action_workflow
 from incidentflow.api.routes.incidents import (
     router as incidents_router,
 )
@@ -27,6 +28,9 @@ def create_app(
         with checkpointer_context_factory(settings.checkpoint_database_url) as checkpointer:
             checkpointer.setup()
             app.state.investigation_workflow = build_investigation_workflow(
+                checkpointer=checkpointer
+            )
+            app.state.jira_action_workflow = build_jira_action_workflow(
                 checkpointer=checkpointer
             )
             yield

@@ -1,7 +1,8 @@
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from langgraph.types import Command
 from sqlalchemy.orm import Session
 
 from incidentflow.api.routes.investigations import (
@@ -48,15 +49,44 @@ def get_jira_proposal_service(
     return JiraApprovalService(JiraProposalRepository(session), ticket_service)
 
 
+def get_jira_action_workflow(request: Request) -> Any:
+    return request.app.state.jira_action_workflow
+
+
 InvestigationServiceDep = Annotated[InvestigationService, Depends(get_investigation_service)]
 JiraTicketServiceDep = Annotated[JiraTicketService, Depends(get_jira_ticket_service)]
 JiraApprovalServiceDep = Annotated[JiraApprovalService, Depends(get_jira_proposal_service)]
+JiraActionWorkflowDep = Annotated[Any, Depends(get_jira_action_workflow)]
 
 router = APIRouter(prefix="/jira", tags=["Jira"])
 
 
 def _jira_unavailable(error: JiraMCPNotEnabledError) -> HTTPException:
     return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error))
+
+
+def _proposal_thread_id(proposal: JiraActionProposal) -> str:
+    return f"jira-proposal:{proposal.id}"
+
+
+def _start_proposal_review(review_workflow: Any, proposal: JiraActionProposal) -> None:
+    review_workflow.invoke(
+        {
+            "proposal_id": str(proposal.id),
+            "investigation_id": str(proposal.investigation_id),
+            "action": proposal.action.value,
+            "payload": proposal.payload,
+            "evidence_references": [f"investigation:{proposal.investigation_id}"],
+        },
+        config={"configurable": {"thread_id": _proposal_thread_id(proposal)}},
+    )
+
+
+def _resume_proposal_review(review_workflow: Any, proposal: JiraActionProposal, decision: str) -> None:
+    review_workflow.invoke(
+        Command(resume=decision),
+        config={"configurable": {"thread_id": _proposal_thread_id(proposal)}},
+    )
 
 
 @router.get("/resources", response_model=JiraMCPResult)
@@ -125,10 +155,13 @@ async def propose_issue(
     data: JiraIssueCreateRequest,
     investigation_service: InvestigationServiceDep,
     approval_service: JiraApprovalServiceDep,
+    review_workflow: JiraActionWorkflowDep,
 ) -> JiraActionProposal:
     if investigation_service.get_investigation(investigation_id) is None:
         raise HTTPException(status_code=404, detail="Investigation not found")
-    return approval_service.propose_issue(investigation_id, data)
+    proposal = approval_service.propose_issue(investigation_id, data)
+    _start_proposal_review(review_workflow, proposal)
+    return proposal
 
 
 @router.post(
@@ -141,10 +174,13 @@ async def propose_comment(
     data: JiraIssueCommentRequest,
     investigation_service: InvestigationServiceDep,
     approval_service: JiraApprovalServiceDep,
+    review_workflow: JiraActionWorkflowDep,
 ) -> JiraActionProposal:
     if investigation_service.get_investigation(investigation_id) is None:
         raise HTTPException(status_code=404, detail="Investigation not found")
-    return approval_service.propose_comment(investigation_id, data)
+    proposal = approval_service.propose_comment(investigation_id, data)
+    _start_proposal_review(review_workflow, proposal)
+    return proposal
 
 
 @router.get(
@@ -162,9 +198,15 @@ def list_proposals(
 
 @router.post("/proposals/{proposal_id}/approve", response_model=JiraActionProposal)
 async def approve_proposal(
-    proposal_id: UUID, approval_service: JiraApprovalServiceDep
+    proposal_id: UUID,
+    approval_service: JiraApprovalServiceDep,
+    review_workflow: JiraActionWorkflowDep,
 ) -> JiraActionProposal:
     try:
+        proposal = approval_service.get_proposal(proposal_id)
+        if proposal is None:
+            raise JiraProposalNotFoundError
+        _resume_proposal_review(review_workflow, proposal, "approve")
         return await approval_service.approve_and_execute(proposal_id)
     except JiraProposalNotFoundError as error:
         raise HTTPException(status_code=404, detail="Jira proposal not found") from error
@@ -177,9 +219,16 @@ def reject_proposal(
     proposal_id: UUID,
     decision: JiraProposalDecision,
     approval_service: JiraApprovalServiceDep,
+    review_workflow: JiraActionWorkflowDep,
 ) -> JiraActionProposal:
     try:
+        proposal = approval_service.get_proposal(proposal_id)
+        if proposal is None:
+            raise JiraProposalNotFoundError
+        _resume_proposal_review(review_workflow, proposal, "reject")
         return approval_service.reject(proposal_id, actor=decision.actor, reason=decision.reason)
+    except JiraProposalNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Jira proposal not found") from error
     except JiraProposalNotApprovableError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
@@ -189,8 +238,15 @@ def cancel_proposal(
     proposal_id: UUID,
     decision: JiraProposalDecision,
     approval_service: JiraApprovalServiceDep,
+    review_workflow: JiraActionWorkflowDep,
 ) -> JiraActionProposal:
     try:
+        proposal = approval_service.get_proposal(proposal_id)
+        if proposal is None:
+            raise JiraProposalNotFoundError
+        _resume_proposal_review(review_workflow, proposal, "cancel")
         return approval_service.cancel(proposal_id, actor=decision.actor, reason=decision.reason)
+    except JiraProposalNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Jira proposal not found") from error
     except JiraProposalNotApprovableError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
