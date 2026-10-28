@@ -7,7 +7,10 @@ from incidentflow.core.config import get_settings
 from incidentflow.knowledge.pinecone_store import PineconeKnowledgeStore
 
 
-@tool("search_incident_response_guides")
+@tool(
+    "search_incident_response_guides",
+    description="Search simulated read-only incident response guides for development testing only.",
+)
 def search_simulated_incident_response_guides(query: str) -> str:
     """Search simulated incident response guides for development-only testing.
 
@@ -27,7 +30,10 @@ def search_simulated_incident_response_guides(query: str) -> str:
     )
 
 
-@tool("search_incident_response_guides")
+@tool(
+    "search_incident_response_guides",
+    description="Search read-only Pinecone incident response guides using an incident query and optional document filters.",
+)
 def search_incident_response_guides(
     query: str,
     document_id: str | None = None,
