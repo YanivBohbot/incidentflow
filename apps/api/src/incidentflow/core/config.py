@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     pinecone_index_name: str = "incidentflow-runbooks"
     pinecone_namespace: str = "official-public-docs"
     pinecone_local_namespace: str = "local-incident-documents"
+    pinecone_resolved_incidents_enabled: bool = False
+    pinecone_resolved_incidents_namespace: str = "resolved_incidents"
     pinecone_embedding_model: str = "text-embedding-3-small"
     pinecone_top_k: int = 3
     pinecone_candidate_k: int = 8

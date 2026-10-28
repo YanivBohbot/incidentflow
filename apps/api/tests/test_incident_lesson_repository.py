@@ -5,6 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from incidentflow.application.services.incident_lesson_service import IncidentLessonService
 from incidentflow.domain.investigations.models import InvestigationLifecycle
 from incidentflow.domain.memory.models import (
     IncidentLessonConfirmation,
@@ -63,16 +64,37 @@ def test_only_completed_investigations_create_pending_index_lessons() -> None:
     assert lesson.index_error is None
 
 
-def test_failed_index_does_not_mark_lesson_confirmed() -> None:
+def test_failed_pinecone_index_does_not_mark_lesson_confirmed() -> None:
+    class FailingIndex:
+        def index_confirmed_incident_lesson(self, _lesson) -> str:
+            raise RuntimeError("Pinecone unavailable")
+
     session = _session()
     repository = IncidentLessonRepository(session)
     investigation = _investigation(session, InvestigationLifecycle.COMPLETED)
-    lesson = repository.create_pending(_confirmation(investigation.id))
+    service = IncidentLessonService(repository, FailingIndex())
 
-    index_failed = repository.mark_index_failed(lesson.id, "Pinecone unavailable")
-    confirmed = repository.mark_confirmed(lesson.id, "resolved-incident:123")
+    index_failed = service.confirm_and_index(_confirmation(investigation.id))
+    confirmed = repository.mark_confirmed(index_failed.id, "resolved-incident:123")
 
     assert index_failed is not None
     assert index_failed.state is IncidentLessonState.INDEX_FAILED
     assert index_failed.index_error == "Pinecone unavailable"
     assert confirmed is None
+
+
+def test_successful_pinecone_index_marks_lesson_confirmed() -> None:
+    class SuccessfulIndex:
+        def index_confirmed_incident_lesson(self, _lesson) -> str:
+            return "resolved-incident:123"
+
+    session = _session()
+    repository = IncidentLessonRepository(session)
+    investigation = _investigation(session, InvestigationLifecycle.COMPLETED)
+    service = IncidentLessonService(repository, SuccessfulIndex())
+
+    confirmed = service.confirm_and_index(_confirmation(investigation.id))
+
+    assert confirmed.state is IncidentLessonState.CONFIRMED
+    assert confirmed.vector_id == "resolved-incident:123"
+    assert confirmed.confirmed_at is not None
