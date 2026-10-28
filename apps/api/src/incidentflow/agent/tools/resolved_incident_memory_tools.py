@@ -40,6 +40,7 @@ def search_confirmed_incidents(
             },
             "matches": [
                 {
+                    "source_type": "confirmed_incident_lesson",
                     "source_investigation_id": document.metadata.get("investigation_id"),
                     "service": document.metadata.get("service"),
                     "environment": document.metadata.get("environment"),

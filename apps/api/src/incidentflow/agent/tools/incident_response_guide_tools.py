@@ -3,6 +3,7 @@ import json
 from langchain.tools import tool
 from langchain_core.tools import BaseTool
 
+from incidentflow.agent.tools.resolved_incident_memory_tools import search_confirmed_incidents
 from incidentflow.core.config import get_settings
 from incidentflow.knowledge.pinecone_store import PineconeKnowledgeStore
 
@@ -75,6 +76,10 @@ def search_incident_response_guides(
 
 def build_knowledge_tools() -> list[BaseTool]:
     """Expose live Pinecone retrieval only after explicit configuration."""
-    if get_settings().pinecone_enabled:
-        return [search_incident_response_guides]
+    settings = get_settings()
+    if settings.pinecone_enabled:
+        tools = [search_incident_response_guides]
+        if settings.pinecone_resolved_incidents_enabled:
+            tools.append(search_confirmed_incidents)
+        return tools
     return [search_simulated_incident_response_guides]

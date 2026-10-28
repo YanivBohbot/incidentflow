@@ -5,6 +5,7 @@ from incidentflow.agent.agents_specialist.contracts import (
 from incidentflow.agent.agents_specialist.knowledge import build_knowledge_agent
 from incidentflow.agent.identities import KNOWLEDGE_AGENT
 from incidentflow.agent.tools.incident_response_guide_tools import (
+    build_knowledge_tools,
     search_simulated_incident_response_guides,
 )
 from incidentflow.core.config import get_settings
@@ -29,6 +30,24 @@ def test_knowledge_agent_builds_without_a_model_request(monkeypatch) -> None:
     agent = build_knowledge_agent()
 
     assert agent.name == KNOWLEDGE_AGENT.technical_name
+
+
+def test_knowledge_agent_receives_runbook_and_confirmed_incident_tools(monkeypatch) -> None:
+    class EnabledSettings:
+        pinecone_enabled = True
+        pinecone_resolved_incidents_enabled = True
+
+    monkeypatch.setattr(
+        "incidentflow.agent.tools.incident_response_guide_tools.get_settings",
+        lambda: EnabledSettings(),
+    )
+
+    tools = build_knowledge_tools()
+
+    assert {tool.name for tool in tools} >= {
+        "search_incident_response_guides",
+        "search_confirmed_incidents",
+    }
 
 
 def test_knowledge_finding_separates_documents_from_recommendations() -> None:
