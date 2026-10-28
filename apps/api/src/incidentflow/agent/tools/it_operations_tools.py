@@ -40,7 +40,8 @@ async def ask_it_operations(incident_context: str) -> str:
     settings = get_settings()
     if settings.jira_mcp_enabled:
         try:
-            return await _investigate_incident_with_jira(incident_context)
+            finding_json = await _investigate_incident_with_jira(incident_context)
+            return finding_json
         except Exception:
             logger.exception("Jira specialist delegation failed")
             return ITOperationsFinding(

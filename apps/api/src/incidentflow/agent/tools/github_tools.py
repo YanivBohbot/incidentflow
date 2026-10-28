@@ -7,6 +7,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from incidentflow.agent.agents_specialist.contracts import GitHubFinding
 from incidentflow.agent.agents_specialist.github import build_github_analysis_model
+from incidentflow.agent.guardrails.untrusted_content import mark_external_content_as_untrusted
 from incidentflow.agent.mcp_clients.github import GitHubMCPClient
 from incidentflow.agent.prompts.github import GITHUB_ANALYSIS_SYSTEM_PROMPT
 from incidentflow.core.config import get_settings
@@ -31,7 +32,11 @@ async def _analyse_incident_related_github_changes(incident_context: str) -> str
                 try:
                     result = await tool_set.get(tool_name).ainvoke({"owner": owner, "repo": repo})
                     content = getattr(result, "content", result)
-                    evidence_blocks.append(f"{tool_name} for {repository}:\n{str(content)[:6000]}")
+                    evidence_blocks.append(
+                        mark_external_content_as_untrusted(
+                            f"{tool_name} for {repository}", str(content)[:6000]
+                        )
+                    )
                 except Exception as error:  # noqa: BLE001 - preserve partial MCP evidence.
                     logger.warning("GitHub MCP read failed for %s in %s", tool_name, repository)
                     evidence_blocks.append(f"{tool_name} for {repository} failed: {type(error).__name__}.")
@@ -70,7 +75,8 @@ async def ask_github(incident_context: str) -> str:
     settings = get_settings()
     if settings.github_mcp_enabled and settings.github_mcp_is_configured and settings.github_mcp_allowed_repositories:
         try:
-            return await _analyse_incident_related_github_changes(incident_context)
+            finding_json = await _analyse_incident_related_github_changes(incident_context)
+            return finding_json
         except Exception:
             logger.exception("GitHub specialist delegation failed")
             return GitHubFinding(
