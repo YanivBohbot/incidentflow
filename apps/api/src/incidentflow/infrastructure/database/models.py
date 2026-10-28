@@ -11,6 +11,7 @@ from incidentflow.domain.incidents.models import (
 )
 from incidentflow.domain.investigations.models import InvestigationLifecycle
 from incidentflow.domain.jira.models import JiraProposalAction, JiraProposalState
+from incidentflow.domain.memory.models import IncidentLessonState
 from incidentflow.infrastructure.database.base import Base
 
 
@@ -114,6 +115,34 @@ class JiraActionProposalORM(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+
+class IncidentLessonORM(Base):
+    __tablename__ = "incident_lessons"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    investigation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("investigations.id"), nullable=False, index=True
+    )
+    service: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    environment: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    tenant_id: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
+    confirmed_root_cause: Mapped[str] = mapped_column(Text, nullable=False)
+    validated_resolution: Mapped[str] = mapped_column(Text, nullable=False)
+    state: Mapped[IncidentLessonState] = mapped_column(
+        Enum(IncidentLessonState, name="incident_lesson_state"),
+        nullable=False,
+        default=IncidentLessonState.PENDING_INDEX,
+    )
+    vector_id: Mapped[str | None] = mapped_column(String(200), nullable=True, unique=True)
+    index_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
     )
