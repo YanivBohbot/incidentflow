@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     pinecone_min_score: float = 0.2
     # PostgreSQL
     database_url: str
+    langgraph_checkpoint_database_url: str | None = None
+
+    @property
+    def checkpoint_database_url(self) -> str:
+        """Use a dedicated checkpoint database only when explicitly configured."""
+        return self.langgraph_checkpoint_database_url or self.database_url
 
     model_config = SettingsConfigDict(
         env_file=".env",

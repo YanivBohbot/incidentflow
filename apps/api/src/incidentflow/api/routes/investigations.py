@@ -2,10 +2,9 @@ from collections.abc import Iterator
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from incidentflow.agent.orchestration.investigation_workflow import build_investigation_workflow
 from incidentflow.application.services.investigation_service import InvestigationService
 from incidentflow.domain.investigations.models import Investigation, InvestigationStart
 from incidentflow.infrastructure.database.incident_repository import IncidentRepository
@@ -19,12 +18,13 @@ def get_db_session() -> Iterator[Session]:
 
 
 def get_investigation_service(
+    request: Request,
     session: Annotated[Session, Depends(get_db_session)],
 ) -> InvestigationService:
     return InvestigationService(
         InvestigationRepository(session),
         IncidentRepository(session),
-        build_investigation_workflow(),
+        request.app.state.investigation_workflow,
     )
 
 

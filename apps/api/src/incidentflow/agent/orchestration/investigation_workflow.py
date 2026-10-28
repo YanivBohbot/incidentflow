@@ -58,6 +58,8 @@ def finish_failed_investigation(state: InvestigationWorkflowState) -> dict:
 
 def build_investigation_workflow(
     supervisor: Any | None = None,
+    *,
+    checkpointer: Any | None = None,
 ):
     def run_supervisor_investigation(state: InvestigationWorkflowState) -> dict:
         active_supervisor = supervisor
@@ -124,4 +126,4 @@ def build_investigation_workflow(
     )
     workflow.add_edge("finalize_report", END)
     workflow.add_edge("finish_failed_investigation", END)
-    return workflow.compile()
+    return workflow.compile(checkpointer=checkpointer)
