@@ -44,6 +44,10 @@ The API then starts, opens the PostgreSQL LangGraph checkpointer, and calls
 The web container proxies `/api/*` to the API container, so browser requests
 remain same-origin.
 
+If a Vite development server already uses port `5173`, set `WEB_PORT=5174` in
+the root `.env` before starting the `web` service. The web application will
+then be available at `http://127.0.0.1:5174`.
+
 ## Stop the stack
 
 ```powershell
