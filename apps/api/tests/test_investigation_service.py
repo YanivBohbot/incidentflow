@@ -41,6 +41,11 @@ class FailedWorkflow:
         }
 
 
+class ThrowingWorkflow:
+    def invoke(self, payload: dict, config: dict) -> dict:
+        raise RuntimeError("Specialist integration became unavailable.")
+
+
 def create_incident(session: Session) -> IncidentORM:
     incident = IncidentORM(
         id=uuid4(),
@@ -108,3 +113,27 @@ def test_service_persists_a_failed_workflow() -> None:
 
         assert investigation.lifecycle == InvestigationLifecycle.FAILED
         assert investigation.error_message == "incident_request must not be empty."
+
+
+def test_service_returns_a_persisted_failure_when_workflow_raises() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        incident = create_incident(session)
+        service = InvestigationService(
+            InvestigationRepository(session),
+            IncidentRepository(session),
+            ThrowingWorkflow(),
+        )
+
+        investigation = service.run_investigation(
+            InvestigationCreate(
+                incident_id=incident.id,
+                incident_request="Investigate Payment API HTTP 500 errors.",
+                incident_business_status="OPEN",
+            )
+        )
+
+        assert investigation.lifecycle == InvestigationLifecycle.FAILED
+        assert investigation.error_message == "Workflow execution failed before a report was produced."

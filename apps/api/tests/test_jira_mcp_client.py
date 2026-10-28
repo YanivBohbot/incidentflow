@@ -1,14 +1,17 @@
 import pytest
+from fastmcp.client.auth import OAuth
 from langchain_core.tools import tool
 
 from incidentflow.agent.mcp_clients.jira import (
     JIRA_READ_TOOL_NAMES,
     JIRA_TOOL_DESCRIPTIONS,
     JIRA_WRITE_TOOL_NAMES,
+    JiraMCPClient,
     _openai_compatible_schema,
     select_read_tools,
     select_ticket_tools,
 )
+from incidentflow.core.config import get_settings
 
 
 def _tool(name: str):
@@ -75,3 +78,30 @@ def test_schema_removes_mcp_only_arguments_with_untyped_array_items() -> None:
         "required": ["cloudId", "jql", "expand"],
     }
     assert schema["properties"]["fields"] == {"type": "array", "items": {}}
+
+
+def test_jira_client_uses_encrypted_persistent_oauth_when_configured(monkeypatch, tmp_path) -> None:
+    from cryptography.fernet import Fernet
+
+    monkeypatch.setenv("MCP_OAUTH_TOKEN_STORE_DIR", str(tmp_path / "oauth-tokens"))
+    monkeypatch.setenv("MCP_OAUTH_STORAGE_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    get_settings.cache_clear()
+
+    try:
+        auth = JiraMCPClient("https://example.test/mcp")._oauth_auth()
+    finally:
+        get_settings.cache_clear()
+
+    assert isinstance(auth, OAuth)
+
+
+def test_jira_client_rejects_partially_configured_oauth_persistence(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("MCP_OAUTH_TOKEN_STORE_DIR", str(tmp_path / "oauth-tokens"))
+    monkeypatch.delenv("MCP_OAUTH_STORAGE_ENCRYPTION_KEY", raising=False)
+    get_settings.cache_clear()
+
+    try:
+        with pytest.raises(RuntimeError, match="Configure both"):
+            JiraMCPClient("https://example.test/mcp")._oauth_auth()
+    finally:
+        get_settings.cache_clear()

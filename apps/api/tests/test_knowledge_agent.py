@@ -4,7 +4,9 @@ from incidentflow.agent.agents_specialist.contracts import (
 )
 from incidentflow.agent.agents_specialist.knowledge import build_knowledge_agent
 from incidentflow.agent.identities import KNOWLEDGE_AGENT
-from incidentflow.agent.tools.runbooks import search_simulated_incident_response_guides
+from incidentflow.agent.tools.incident_response_guide_tools import (
+    search_simulated_incident_response_guides,
+)
 from incidentflow.core.config import get_settings
 
 

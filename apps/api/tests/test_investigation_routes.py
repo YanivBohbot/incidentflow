@@ -41,6 +41,9 @@ class FakeInvestigationService:
             workflow_thread_id=f"investigation:{self.investigation_id}",
         )
 
+    def list_investigations(self):
+        return [self.get_investigation(self.investigation_id)]
+
 
 def test_start_and_get_investigation_routes() -> None:
     service = FakeInvestigationService()
@@ -65,6 +68,11 @@ def test_start_and_get_investigation_routes() -> None:
 
     assert get_response.status_code == 200
     assert get_response.json()["id"] == str(service.investigation_id)
+
+    list_response = client.get("/api/investigations")
+
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["id"] == str(service.investigation_id)
 
 
 def test_start_investigation_returns_404_for_unknown_incident() -> None:

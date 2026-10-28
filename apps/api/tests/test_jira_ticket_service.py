@@ -58,7 +58,6 @@ def test_ticket_creation_calls_only_the_approved_mcp_tool() -> None:
         issueType="Incident",
         summary="Payment API is returning HTTP 500",
         description="Created from IncidentFlow after human review.",
-        approved=True,
     )
 
     result = _run_immediate(service.create_issue(request))
@@ -76,7 +75,6 @@ def test_ticket_creation_requires_an_explicit_write_enablement() -> None:
         issueType="Incident",
         summary="Payment API is returning HTTP 500",
         description="Created from IncidentFlow after human review.",
-        approved=True,
     )
 
     with pytest.raises(JiraMCPNotEnabledError, match="writes are disabled"):

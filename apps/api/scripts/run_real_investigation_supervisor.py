@@ -1,8 +1,10 @@
 """Run a complete Supervisor investigation with live Jira and MongoDB MCP evidence."""
 
 import argparse
+import asyncio
 
-from langchain_openai.chat_models.base import OpenAIAuthenticationError
+from langchain_openai.chat_models.base import OpenAIAuthenticationError, OpenAIConnectionError
+from openai import OpenAIError
 
 from incidentflow.agent.identities import INVESTIGATION_SUPERVISOR
 from incidentflow.agent.orchestration.supervisor import build_investigation_supervisor
@@ -10,7 +12,8 @@ from incidentflow.core.config import get_settings
 
 DEFAULT_INCIDENT = (
     "Investigate Payment API HTTP 500 errors. Find related Jira incidents, "
-    "review live MongoDB technical evidence and available incident response guides, then recommend next steps."
+    "review live MongoDB technical evidence and available incident response guides, "
+    "then inspect recent relevant GitHub commits and pull requests before recommending next steps."
 )
 
 
@@ -29,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> int:
+async def main() -> int:
     args = parse_args()
     settings = get_settings()
     if not settings.jira_mcp_enabled:
@@ -37,10 +40,13 @@ def main() -> int:
     if not settings.mongodb_mcp_enabled:
         raise RuntimeError("Set MONGODB_MCP_ENABLED=true before running this live investigation.")
 
-    supervisor = build_investigation_supervisor()
-    print(f"Running {INVESTIGATION_SUPERVISOR.display_name} with live Jira and MongoDB MCP...")
     try:
-        result = supervisor.invoke(
+        supervisor = build_investigation_supervisor()
+        print(
+            f"Running {INVESTIGATION_SUPERVISOR.display_name} with live Jira, MongoDB, "
+            "knowledge, and GitHub specialist context..."
+        )
+        result = await supervisor.ainvoke(
             {"messages": [{"role": "user", "content": args.incident}]},
             config={
                 "recursion_limit": 18,
@@ -49,6 +55,12 @@ def main() -> int:
         )
     except OpenAIAuthenticationError:
         print("OpenAI authentication failed. Verify OPENAI_API_KEY without printing it.")
+        return 1
+    except OpenAIConnectionError:
+        print("OpenAI could not be reached. Check DNS or network connectivity.")
+        return 1
+    except OpenAIError:
+        print("OpenAI could not complete the request. Check the model configuration and try again.")
         return 1
 
     delegated_tools = [
@@ -72,4 +84,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(asyncio.run(main()))

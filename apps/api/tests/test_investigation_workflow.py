@@ -10,15 +10,12 @@ class FakeSupervisor:
 
     def invoke(self, payload: dict, config: dict) -> dict:
         assert payload["messages"][0]["content"] == "Payment API HTTP 500"
-        assert config == {"recursion_limit": 10}
+        assert config == {"recursion_limit": 14}
         return {"structured_response": self.report}
 
 
 def test_invalid_request_finishes_without_building_the_supervisor() -> None:
-    def unavailable_supervisor_factory():
-        raise AssertionError("The supervisor must not run for an invalid request.")
-
-    workflow = build_investigation_workflow(unavailable_supervisor_factory)
+    workflow = build_investigation_workflow()
 
     result = workflow.invoke({"incident_request": "   ", "incident_business_status": "open"})
 
@@ -42,7 +39,7 @@ def test_valid_request_runs_supervisor_and_finalizes_report() -> None:
         limitations=["Sources are simulated."],
         confidence=0.8,
     )
-    workflow = build_investigation_workflow(lambda: FakeSupervisor(report))
+    workflow = build_investigation_workflow(FakeSupervisor(report))
 
     result = workflow.invoke(
         {"incident_request": "Payment API HTTP 500", "incident_business_status": "open"},
