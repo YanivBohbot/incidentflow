@@ -13,7 +13,11 @@ from incidentflow.core.config import get_settings
 logger = logging.getLogger(__name__)
 
 
-async def _run_real_it_operations(incident_context: str) -> str:
+async def _investigate_incident_with_jira(incident_context: str) -> str:
+    """Ask the Jira specialist to find ticket evidence related to an incident.
+
+    The specialist can only use the read-only Jira tools exposed by the MCP client.
+    """
     settings = get_settings()
     async with JiraMCPClient(settings.jira_mcp_url).read_tools() as tool_set:
         agent = build_it_operations_agent(jira_tools=tool_set.read_tools)
@@ -36,7 +40,7 @@ async def ask_it_operations(incident_context: str) -> str:
     settings = get_settings()
     if settings.jira_mcp_enabled:
         try:
-            return await _run_real_it_operations(incident_context)
+            return await _investigate_incident_with_jira(incident_context)
         except Exception:
             logger.exception("Jira specialist delegation failed")
             return ITOperationsFinding(

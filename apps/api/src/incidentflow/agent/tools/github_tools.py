@@ -14,12 +14,16 @@ from incidentflow.core.config import get_settings
 logger = logging.getLogger(__name__)
 
 
-async def _run_real_github(incident_context: str) -> str:
+async def _analyse_incident_related_github_changes(incident_context: str) -> str:
+    """Collect allowed GitHub changes, then relate them to the incident context.
+
+    The application fetches commits and pull requests before the model writes its finding.
+    """
     settings = get_settings()
     if not settings.github_mcp_is_configured:
         raise RuntimeError("GitHub MCP transport must be configured when GitHub MCP is enabled.")
 
-    async with _github_mcp_client().read_tools() as tool_set:
+    async with _create_github_mcp_client().read_tools() as tool_set:
         evidence_blocks: list[str] = []
         for repository in settings.github_mcp_allowed_repositories:
             owner, repo = repository.split("/", maxsplit=1)
@@ -42,7 +46,11 @@ async def _run_real_github(incident_context: str) -> str:
     return finding.model_dump_json()
 
 
-def _github_mcp_client() -> GitHubMCPClient:
+def _create_github_mcp_client() -> GitHubMCPClient:
+    """Create the configured read-only connection to the GitHub MCP server.
+
+    It supports either an HTTP MCP server or the local Docker-based MCP process.
+    """
     settings = get_settings()
     if settings.github_mcp_transport == "http":
         return GitHubMCPClient(server_url=settings.github_mcp_url)
@@ -62,7 +70,7 @@ async def ask_github(incident_context: str) -> str:
     settings = get_settings()
     if settings.github_mcp_enabled and settings.github_mcp_is_configured and settings.github_mcp_allowed_repositories:
         try:
-            return await _run_real_github(incident_context)
+            return await _analyse_incident_related_github_changes(incident_context)
         except Exception:
             logger.exception("GitHub specialist delegation failed")
             return GitHubFinding(

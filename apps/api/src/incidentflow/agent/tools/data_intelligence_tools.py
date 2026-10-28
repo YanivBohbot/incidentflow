@@ -13,7 +13,11 @@ from incidentflow.core.config import get_settings
 logger = logging.getLogger(__name__)
 
 
-async def _run_real_data_intelligence(incident_context: str) -> str:
+async def _investigate_incident_with_mongodb(incident_context: str) -> str:
+    """Ask the MongoDB specialist to analyse operational evidence for an incident.
+
+    The specialist receives only the read-only tools exposed by the MCP client.
+    """
     settings = get_settings()
     async with MongoDBMCPClient(settings.mongodb_mcp_url).read_tools() as tool_set:
         agent = build_data_intelligence_agent(mongodb_tools=tool_set.read_tools)
@@ -36,7 +40,7 @@ async def ask_data_intelligence(incident_context: str) -> str:
     settings = get_settings()
     if settings.mongodb_mcp_enabled:
         try:
-            return await _run_real_data_intelligence(incident_context)
+            return await _investigate_incident_with_mongodb(incident_context)
         except Exception:
             logger.exception("MongoDB specialist delegation failed")
             return DataIntelligenceFinding(
