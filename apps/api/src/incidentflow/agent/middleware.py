@@ -6,13 +6,13 @@ from langchain.messages import ToolMessage
 from langchain.tools.tool_node import ToolCallRequest
 from langgraph.types import Command
 
-from incidentflow.agent.guardrails.untrusted_content import wrap_untrusted_tool_message
+from incidentflow.agent.guardrails.external_evidence import wrap_external_evidence_tool_message
 
 ToolResult = ToolMessage | Command[Any]
 
 
-class UntrustedToolResultMiddleware(AgentMiddleware):
-    """Mark synchronous and asynchronous tool outputs as untrusted evidence."""
+class ExternalEvidenceBoundaryMiddleware(AgentMiddleware):
+    """Mark synchronous and asynchronous tool outputs as external evidence."""
 
     def wrap_tool_call(
         self,
@@ -33,12 +33,12 @@ class UntrustedToolResultMiddleware(AgentMiddleware):
         if not isinstance(result, ToolMessage):
             return result
 
-        return wrap_untrusted_tool_message(request.tool_call["name"], result)
+        return wrap_external_evidence_tool_message(request.tool_call["name"], result)
 
 
 def build_shared_middleware() -> list[AgentMiddleware]:
     """Return shared middleware enabled for every specialist agent.
 
-    The untrusted-content guardrail applies to every specialist tool result.
+    The external-evidence boundary applies to every specialist tool result.
     """
-    return [UntrustedToolResultMiddleware()]
+    return [ExternalEvidenceBoundaryMiddleware()]

@@ -7,7 +7,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from incidentflow.agent.agents_specialist.contracts import GitHubFinding
 from incidentflow.agent.agents_specialist.github import build_github_analysis_model
-from incidentflow.agent.guardrails.untrusted_content import mark_external_content_as_untrusted
+from incidentflow.agent.guardrails.external_evidence import mark_external_content_as_evidence
 from incidentflow.agent.mcp_clients.github import GitHubMCPClient
 from incidentflow.agent.prompts.github import GITHUB_ANALYSIS_SYSTEM_PROMPT
 from incidentflow.core.config import get_settings
@@ -33,7 +33,7 @@ async def _analyse_incident_related_github_changes(incident_context: str) -> str
                     result = await tool_set.get(tool_name).ainvoke({"owner": owner, "repo": repo})
                     content = getattr(result, "content", result)
                     evidence_blocks.append(
-                        mark_external_content_as_untrusted(
+                        mark_external_content_as_evidence(
                             f"{tool_name} for {repository}", str(content)[:6000]
                         )
                     )
