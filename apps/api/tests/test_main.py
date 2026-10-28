@@ -46,6 +46,7 @@ def test_app_lifespan_opens_checkpointer_and_shares_workflow(monkeypatch) -> Non
             events.append("setup")
 
     monkeypatch.setattr(main, "build_investigation_workflow", lambda *, checkpointer: checkpointer)
+    monkeypatch.setattr(main, "build_jira_action_workflow", lambda *, checkpointer: checkpointer)
 
     app = main.create_app(checkpointer_context_factory=lambda _database_url: FakeCheckpointerContext())
     lifespan = app.router.lifespan_context(app)
@@ -53,6 +54,7 @@ def test_app_lifespan_opens_checkpointer_and_shares_workflow(monkeypatch) -> Non
     with pytest.raises(StopIteration):
         lifespan.__aenter__().send(None)
     assert app.state.investigation_workflow is not None
+    assert app.state.jira_action_workflow is not None
 
     with pytest.raises(StopIteration):
         lifespan.__aexit__(None, None, None).send(None)
