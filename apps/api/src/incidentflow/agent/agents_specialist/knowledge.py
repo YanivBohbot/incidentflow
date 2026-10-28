@@ -6,7 +6,7 @@ from incidentflow.agent.agents_specialist.contracts import KnowledgeFinding
 from incidentflow.agent.identities import KNOWLEDGE_AGENT
 from incidentflow.agent.middleware import build_shared_middleware
 from incidentflow.agent.prompts.knowledge import KNOWLEDGE_SYSTEM_PROMPT
-from incidentflow.agent.tools.runbooks import build_knowledge_tools
+from incidentflow.agent.tools.incident_response_guide_tools import build_knowledge_tools
 from incidentflow.core.config import get_settings
 
 

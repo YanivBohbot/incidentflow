@@ -1,11 +1,9 @@
-from collections.abc import Callable
 from typing import Any, Literal, TypedDict
 
 from langchain_openai.chat_models.base import OpenAIAuthenticationError
 from langgraph.graph import END, START, StateGraph
 
 from incidentflow.agent.agents_specialist.contracts import InvestigationReport
-from incidentflow.agent.orchestration.supervisor import build_investigation_supervisor
 
 
 class InvestigationWorkflowInput(TypedDict):
@@ -59,13 +57,20 @@ def finish_failed_investigation(state: InvestigationWorkflowState) -> dict:
 
 
 def build_investigation_workflow(
-    supervisor_factory: Callable[[], Any] = build_investigation_supervisor,
+    supervisor: Any | None = None,
 ):
     def run_supervisor_investigation(state: InvestigationWorkflowState) -> dict:
-        supervisor = supervisor_factory()
+        active_supervisor = supervisor
+        if active_supervisor is None:
+            # Import only when an investigation starts; FastAPI can still start
+            # without loading optional MCP integrations.
+            from incidentflow.agent.orchestration.supervisor import (
+                build_investigation_supervisor,
+            )
 
+            active_supervisor = build_investigation_supervisor()
         try:
-            result = supervisor.invoke(
+            result = active_supervisor.invoke(
                 {"messages": [{"role": "user", "content": state["incident_request"]}]},
                 config={"recursion_limit": 14},
             )
