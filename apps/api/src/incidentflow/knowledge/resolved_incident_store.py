@@ -11,10 +11,12 @@ class ResolvedIncidentStore:
     """Index and retrieve only operator-curated lessons from completed incidents."""
 
     def __init__(self, knowledge_store: PineconeKnowledgeStore) -> None:
+        """Wrap the namespace-specific Pinecone adapter used for curated lessons."""
         self._knowledge_store = knowledge_store
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "ResolvedIncidentStore":
+        """Create a store bound only to the resolved-incidents namespace."""
         knowledge_store = PineconeKnowledgeStore.from_settings(
             settings,
             namespaces=(settings.pinecone_resolved_incidents_namespace,),

@@ -9,13 +9,16 @@ from incidentflow.infrastructure.database.incident_lesson_repository import Inci
 class IncidentLessonIndexer(Protocol):
     """The narrow write contract for the isolated resolved-incident namespace."""
 
-    def index_confirmed_incident_lesson(self, lesson: IncidentLesson) -> str: ...
+    def index_confirmed_incident_lesson(self, lesson: IncidentLesson) -> str:
+        """Write the curated lesson and return the resulting vector identifier."""
+        ...
 
 
 class IncidentLessonService:
     """Persist a reviewed lesson, then confirm it only after Pinecone indexing succeeds."""
 
     def __init__(self, repository: IncidentLessonRepository, indexer: IncidentLessonIndexer) -> None:
+        """Keep the persistence and isolated-vector-store boundaries for confirmation."""
         self._repository = repository
         self._indexer = indexer
 

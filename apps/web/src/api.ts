@@ -73,6 +73,27 @@ export type JiraCommentProposalInput = {
   commentBody: string
 }
 
+export type IncidentLesson = {
+  id: string
+  investigation_id: string
+  service: string
+  environment: string
+  confirmed_root_cause: string
+  validated_resolution: string
+  tenant_id: string | null
+  state: 'PENDING_INDEX' | 'CONFIRMED' | 'INDEX_FAILED'
+  vector_id: string | null
+  index_error: string | null
+  created_at: string
+  confirmed_at: string | null
+  updated_at: string
+}
+
+export type IncidentLessonConfirmation = Pick<
+  IncidentLesson,
+  'investigation_id' | 'service' | 'environment' | 'confirmed_root_cause' | 'validated_resolution' | 'tenant_id'
+>
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
     ...init,
@@ -95,6 +116,11 @@ export const api = {
       body: JSON.stringify({ incident_id: incidentId, incident_request: incidentRequest }),
     }),
   listInvestigations: () => request<Investigation[]>('/investigations'),
+  confirmIncidentLesson: (investigationId: string, data: IncidentLessonConfirmation) =>
+    request<IncidentLesson>(`/investigations/${investigationId}/memory-lessons`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   listJiraProposals: (investigationId: string) =>
     request<JiraProposal[]>(`/jira/investigations/${investigationId}/proposals`),
   listJiraResources: () => request<JiraResourceOption[]>('/jira/catalog/resources'),

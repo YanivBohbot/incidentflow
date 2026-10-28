@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
-import type { Incident, Investigation, JiraCommentProposalInput, JiraIssueProposalInput, JiraProposal } from '../api'
+import type { Incident, IncidentLessonConfirmation, Investigation, JiraCommentProposalInput, JiraIssueProposalInput, JiraProposal } from '../api'
 
 export function useIncidentFlow() {
   const [incidents, setIncidents] = useState<Incident[]>([])
@@ -53,6 +53,18 @@ export function useIncidentFlow() {
       setStatusMessage('Incident created. You can now start an investigation.')
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : 'Could not create incident.')
+      throw error
+    }
+  }, [])
+
+  /** Submit an operator-reviewed lesson for curated long-term memory indexing. */
+  const confirmIncidentLesson = useCallback(async (data: IncidentLessonConfirmation) => {
+    try {
+      const lesson = await api.confirmIncidentLesson(data.investigation_id, data)
+      setStatusMessage(lesson.state === 'CONFIRMED' ? 'Confirmed lesson added to incident memory.' : 'Incident lesson indexing failed.')
+      return lesson
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : 'Could not confirm the incident lesson.')
       throw error
     }
   }, [])
@@ -142,6 +154,7 @@ export function useIncidentFlow() {
   return {
     approveProposal,
     cancelProposal,
+    confirmIncidentLesson,
     createIncident,
     incidents,
     investigations,
