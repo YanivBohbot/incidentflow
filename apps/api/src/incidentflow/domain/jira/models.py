@@ -43,6 +43,7 @@ class JiraProposalState(str, Enum):
     EXECUTED = "EXECUTED"
     FAILED = "FAILED"
     REJECTED = "REJECTED"
+    CANCELLED = "CANCELLED"
 
 
 def utc_now() -> datetime:
@@ -61,6 +62,14 @@ class JiraActionProposal(BaseModel):
     error_message: str | None = None
     approved_at: datetime | None = None
     approved_by: str | None = None
+    rejected_at: datetime | None = None
+    rejected_by: str | None = None
+    rejection_reason: str | None = None
+    cancelled_at: datetime | None = None
+    cancelled_by: str | None = None
+    cancellation_reason: str | None = None
+    proposed_by: str = "local-operator"
+    decision_history: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -68,3 +77,10 @@ class JiraActionProposal(BaseModel):
 class JiraMCPResult(BaseModel):
     operation: str
     result: Any
+
+
+class JiraProposalDecision(BaseModel):
+    """A local human decision recorded before any Jira mutation can occur."""
+
+    actor: str = Field(default="local-operator", min_length=1, max_length=200)
+    reason: str | None = Field(default=None, max_length=2000)

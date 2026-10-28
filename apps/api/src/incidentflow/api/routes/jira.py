@@ -19,11 +19,20 @@ from incidentflow.application.services.jira_ticket_service import (
     JiraTicketService,
 )
 from incidentflow.core.config import get_settings
+from incidentflow.domain.jira.catalog import (
+    JiraIssueTypeOption,
+    JiraProjectOption,
+    JiraResourceOption,
+    issue_type_options,
+    project_options,
+    resource_options,
+)
 from incidentflow.domain.jira.models import (
     JiraActionProposal,
     JiraIssueCommentRequest,
     JiraIssueCreateRequest,
     JiraMCPResult,
+    JiraProposalDecision,
 )
 from incidentflow.infrastructure.database.jira_proposal_repository import JiraProposalRepository
 
@@ -72,6 +81,36 @@ async def list_issue_types(
 ) -> JiraMCPResult:
     try:
         return await service.get_issue_types(cloud_id, project_key)
+    except JiraMCPNotEnabledError as error:
+        raise _jira_unavailable(error) from error
+
+
+@router.get("/catalog/resources", response_model=list[JiraResourceOption])
+async def list_resource_options(service: JiraTicketServiceDep) -> list[JiraResourceOption]:
+    try:
+        return resource_options((await service.get_resources()).result)
+    except JiraMCPNotEnabledError as error:
+        raise _jira_unavailable(error) from error
+
+
+@router.get("/catalog/projects", response_model=list[JiraProjectOption])
+async def list_project_options(
+    cloud_id: str, service: JiraTicketServiceDep
+) -> list[JiraProjectOption]:
+    try:
+        return project_options((await service.get_projects(cloud_id)).result)
+    except JiraMCPNotEnabledError as error:
+        raise _jira_unavailable(error) from error
+
+
+@router.get(
+    "/catalog/projects/{project_key}/issue-types", response_model=list[JiraIssueTypeOption]
+)
+async def list_issue_type_options(
+    project_key: str, cloud_id: str, service: JiraTicketServiceDep
+) -> list[JiraIssueTypeOption]:
+    try:
+        return issue_type_options((await service.get_issue_types(cloud_id, project_key)).result)
     except JiraMCPNotEnabledError as error:
         raise _jira_unavailable(error) from error
 
@@ -129,5 +168,29 @@ async def approve_proposal(
         return await approval_service.approve_and_execute(proposal_id)
     except JiraProposalNotFoundError as error:
         raise HTTPException(status_code=404, detail="Jira proposal not found") from error
+    except JiraProposalNotApprovableError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+
+
+@router.post("/proposals/{proposal_id}/reject", response_model=JiraActionProposal)
+def reject_proposal(
+    proposal_id: UUID,
+    decision: JiraProposalDecision,
+    approval_service: JiraApprovalServiceDep,
+) -> JiraActionProposal:
+    try:
+        return approval_service.reject(proposal_id, actor=decision.actor, reason=decision.reason)
+    except JiraProposalNotApprovableError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+
+
+@router.post("/proposals/{proposal_id}/cancel", response_model=JiraActionProposal)
+def cancel_proposal(
+    proposal_id: UUID,
+    decision: JiraProposalDecision,
+    approval_service: JiraApprovalServiceDep,
+) -> JiraActionProposal:
+    try:
+        return approval_service.cancel(proposal_id, actor=decision.actor, reason=decision.reason)
     except JiraProposalNotApprovableError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error

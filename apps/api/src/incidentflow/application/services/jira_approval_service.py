@@ -30,21 +30,31 @@ class JiraApprovalService:
         self.jira_ticket_service = jira_ticket_service
 
     def propose_issue(
-        self, investigation_id: UUID, request: JiraIssueCreateRequest
+        self,
+        investigation_id: UUID,
+        request: JiraIssueCreateRequest,
+        *,
+        proposed_by: str = "local-operator",
     ) -> JiraActionProposal:
         return self.repository.create(
             investigation_id,
             JiraProposalAction.CREATE_ISSUE,
             request.tool_arguments(),
+            proposed_by,
         )
 
     def propose_comment(
-        self, investigation_id: UUID, request: JiraIssueCommentRequest
+        self,
+        investigation_id: UUID,
+        request: JiraIssueCommentRequest,
+        *,
+        proposed_by: str = "local-operator",
     ) -> JiraActionProposal:
         return self.repository.create(
             investigation_id,
             JiraProposalAction.ADD_COMMENT,
             request.tool_arguments(),
+            proposed_by,
         )
 
     def get_proposal(self, proposal_id: UUID) -> JiraActionProposal | None:
@@ -53,8 +63,20 @@ class JiraApprovalService:
     def list_proposals(self, investigation_id: UUID) -> list[JiraActionProposal]:
         return self.repository.list_for_investigation(investigation_id)
 
+    def reject(self, proposal_id: UUID, *, actor: str, reason: str | None) -> JiraActionProposal:
+        proposal = self.repository.reject(proposal_id, actor, reason)
+        if proposal is None:
+            raise JiraProposalNotApprovableError("Only a pending Jira proposal can be rejected.")
+        return proposal
+
+    def cancel(self, proposal_id: UUID, *, actor: str, reason: str | None) -> JiraActionProposal:
+        proposal = self.repository.cancel(proposal_id, actor, reason)
+        if proposal is None:
+            raise JiraProposalNotApprovableError("Only a pending Jira proposal can be cancelled.")
+        return proposal
+
     async def approve_and_execute(
-        self, proposal_id: UUID, *, approved_by: str = "unattributed"
+        self, proposal_id: UUID, *, approved_by: str = "local-operator"
     ) -> JiraActionProposal:
         proposal = self.repository.get(proposal_id)
         if proposal is None:

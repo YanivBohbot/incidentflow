@@ -1,8 +1,7 @@
 """Application service for the constrained, human-approved Jira ticket flow."""
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from incidentflow.agent.mcp_clients.jira import JiraMCPClient
 from incidentflow.core.config import Settings
 from incidentflow.domain.jira.models import (
     JiraIssueCommentRequest,
@@ -10,15 +9,18 @@ from incidentflow.domain.jira.models import (
     JiraMCPResult,
 )
 
+if TYPE_CHECKING:
+    from incidentflow.agent.mcp_clients.jira import JiraMCPClient
+
 
 class JiraMCPNotEnabledError(RuntimeError):
     """Raised when Jira MCP has not been deliberately enabled by an administrator."""
 
 
 class JiraTicketService:
-    def __init__(self, settings: Settings, client: JiraMCPClient | None = None) -> None:
+    def __init__(self, settings: Settings, client: "JiraMCPClient | None" = None) -> None:
         self.settings = settings
-        self.client = client or JiraMCPClient(settings.jira_mcp_url)
+        self.client = client
 
     def _require_read_access(self) -> None:
         if not self.settings.jira_mcp_enabled:
@@ -40,7 +42,7 @@ class JiraTicketService:
     async def get_issue_types(self, cloud_id: str, project_key: str) -> JiraMCPResult:
         return await self._invoke_read(
             "listJiraProjectIssueTypesMetadata",
-            {"cloudId": cloud_id, "projectKey": project_key},
+            {"cloudId": cloud_id, "projectIdOrKey": project_key},
         )
 
     async def create_issue(self, request: JiraIssueCreateRequest) -> JiraMCPResult:
@@ -55,14 +57,24 @@ class JiraTicketService:
 
     async def _invoke_read(self, operation: str, arguments: dict[str, str]) -> JiraMCPResult:
         self._require_read_access()
-        async with self.client.read_tools() as tool_set:
+        client = self.client
+        if client is None:
+            from incidentflow.agent.mcp_clients.jira import JiraMCPClient
+
+            client = JiraMCPClient(self.settings.jira_mcp_url)
+        async with client.read_tools() as tool_set:
             result = await tool_set.get(operation).ainvoke(arguments)
         return JiraMCPResult(operation=operation, result=_serializable_result(result))
 
     async def _invoke_ticket_write(
         self, operation: str, arguments: dict[str, str]
     ) -> JiraMCPResult:
-        async with self.client.ticket_tools() as tool_set:
+        client = self.client
+        if client is None:
+            from incidentflow.agent.mcp_clients.jira import JiraMCPClient
+
+            client = JiraMCPClient(self.settings.jira_mcp_url)
+        async with client.ticket_tools() as tool_set:
             result = await tool_set.get(operation).ainvoke(arguments)
         return JiraMCPResult(operation=operation, result=_serializable_result(result))
 
