@@ -41,4 +41,6 @@ def build_shared_middleware() -> list[AgentMiddleware]:
 
     The external-evidence boundary applies to every specialist tool result.
     """
+    # PII redaction remains deliberately disabled until IncidentFlow has a
+    # field-level data-classification policy for requests and tool payloads.
     return [ExternalEvidenceBoundaryMiddleware()]

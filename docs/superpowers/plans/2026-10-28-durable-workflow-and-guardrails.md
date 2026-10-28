@@ -85,7 +85,7 @@ Commit: `refactor: clarify external evidence guardrail`
 - Create: `apps/api/tests/test_checkpoint_lifecycle.py`
 
 **Interfaces:**
-- Produces: `create_postgres_checkpointer(database_url: str) -> PostgresSaver`.
+- Produces: `open_postgres_checkpointer(database_url: str) -> ContextManager[PostgresSaver]`.
 - Produces: `build_investigation_workflow(supervisor: Any | None = None, *, checkpointer: BaseCheckpointSaver | None = None)`.
 - Consumes: `Settings.langgraph_checkpoint_database_url`, which defaults to a normalized PostgreSQL form of `database_url`.
 

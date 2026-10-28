@@ -31,8 +31,16 @@ def validate_incident_request(state: InvestigationWorkflowState) -> dict:
             "workflow_stage": "validation_failed",
             "errors": ["incident_request must not be empty."],
         }
+    if len(incident_request) > 5000:
+        return {
+            "is_valid_request": False,
+            "investigation_lifecycle": "failed",
+            "workflow_stage": "validation_failed",
+            "errors": ["incident_request must not exceed 5000 characters."],
+        }
 
     return {
+        "incident_request": incident_request,
         "is_valid_request": True,
         "investigation_lifecycle": "running",
         "workflow_stage": "supervisor_investigation",
