@@ -13,9 +13,16 @@ Copy-Item .env.example .env
 Copy-Item apps/api/.env.example apps/api/.env
 ```
 
-Replace every `CHANGE_ME` value. `POSTGRES_PASSWORD` must be identical in both
-files. `OPENAI_API_KEY` is required for the API settings, even if no
-investigation is started.
+Replace the Keycloak and OpenAI placeholders. Keep
+`POSTGRES_PASSWORD=incidentflow_dev` when reusing the existing local
+PostgreSQL volume. PostgreSQL stores its initial password inside that volume,
+so changing the Compose value later does not rotate it. `OPENAI_API_KEY` is
+required for the API settings, even if no investigation is started.
+
+For a new local database, choose the password before the first `docker compose
+up` and use that same value in both `.env` and `apps/api/.env`. Do not delete a
+volume just to change a password unless you explicitly intend to discard its
+local data and persisted checkpoints.
 
 ## Start the stack
 
