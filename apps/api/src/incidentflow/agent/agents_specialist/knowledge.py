@@ -27,3 +27,15 @@ def build_knowledge_agent(knowledge_tools: list[BaseTool] | None = None):
         middleware=build_shared_middleware(),
         response_format=KnowledgeFinding,
     )
+
+
+def build_knowledge_analysis_model():
+    """Build the one-shot structured analyst used after a bounded Pinecone search."""
+    settings = get_settings()
+    model = ChatOpenAI(
+        model=settings.openai_model,
+        api_key=settings.openai_api_key,
+        temperature=0,
+        timeout=settings.openai_timeout_seconds,
+    )
+    return model.with_structured_output(KnowledgeFinding)

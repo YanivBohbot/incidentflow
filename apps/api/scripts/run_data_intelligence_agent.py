@@ -6,11 +6,8 @@ import asyncio
 from langchain_openai.chat_models.base import OpenAIAuthenticationError
 
 from incidentflow.agent.agents_specialist.contracts import DataIntelligenceFinding
-from incidentflow.agent.agents_specialist.data_intelligence import (
-    build_data_intelligence_agent,
-)
 from incidentflow.agent.identities import DATA_INTELLIGENCE_AGENT
-from incidentflow.agent.mcp_clients.mongodb import MongoDBMCPClient
+from incidentflow.agent.tools.data_intelligence_tools import ask_data_intelligence
 from incidentflow.core.config import get_settings
 
 DEFAULT_INCIDENT = (
@@ -35,30 +32,17 @@ async def run(incident: str) -> None:
     if not settings.mongodb_mcp_enabled:
         raise RuntimeError("Set MONGODB_MCP_ENABLED=true before running this live MongoDB demo.")
 
-    async with MongoDBMCPClient(
-        settings.mongodb_mcp_url, settings.mongodb_mcp_connection_string
-    ).read_tools() as tool_set:
-        agent = build_data_intelligence_agent(tool_set.read_tools)
-        result = await agent.ainvoke(
-            {"messages": [{"role": "user", "content": incident}]},
-            config={
-                "recursion_limit": 18,
-                "configurable": {"thread_id": "data-intelligence-read-demo"},
-            },
-        )
-
-    for message in result["messages"]:
-        print(f"\n[{message.type}]")
-        print(message.content)
-
-    finding = result.get("structured_response") or DataIntelligenceFinding(
+    finding_json = await ask_data_intelligence.ainvoke({"incident_context": incident})
+    finding = DataIntelligenceFinding.model_validate_json(finding_json)
+    if finding.confidence == 0 and not finding.evidence:
+        finding = DataIntelligenceFinding(
         summary="MongoDB investigation stopped before a structured finding was produced.",
         timeline=[],
         error_signatures=[],
         evidence=[],
         suspected_root_causes=[],
         confidence=0,
-    )
+        )
     print("\n[structured_response]")
     print(finding.model_dump_json(indent=2))
 

@@ -1,4 +1,4 @@
-from langchain.agents.middleware import ToolCallLimitMiddleware
+from langchain.agents.middleware import ModelCallLimitMiddleware, ToolCallLimitMiddleware
 from langchain_core.tools import tool
 
 from incidentflow.agent.agents_specialist.contracts import (
@@ -41,6 +41,14 @@ def test_data_intelligence_agent_builds_without_a_model_request(monkeypatch) -> 
         ("find", 1),
     }
     assert {limiter.exit_behavior for limiter in limiters} == {"continue"}
+    model_limiters = [
+        middleware
+        for middleware in build_data_intelligence_middleware()
+        if isinstance(middleware, ModelCallLimitMiddleware)
+    ]
+    assert [(limiter.run_limit, limiter.exit_behavior) for limiter in model_limiters] == [
+        (5, "end")
+    ]
 
 
 def test_data_intelligence_finding_separates_events_from_causes() -> None:

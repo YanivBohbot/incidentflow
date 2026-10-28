@@ -1,3 +1,6 @@
+import asyncio
+from collections.abc import Coroutine
+from threading import Thread
 from typing import Any, Literal, TypedDict
 
 from langchain_openai.chat_models.base import OpenAIAuthenticationError
@@ -20,6 +23,25 @@ class InvestigationWorkflowOutput(TypedDict):
 
 class InvestigationWorkflowState(InvestigationWorkflowInput, InvestigationWorkflowOutput):
     is_valid_request: bool
+
+
+def _run_coroutine_in_worker(coroutine: Coroutine[Any, Any, Any]) -> Any:
+    """Bridge async MCP work into the workflow's synchronous node execution."""
+    outcome: dict[str, Any] = {}
+
+    def execute() -> None:
+        """Run the coroutine in an event loop owned by this short-lived worker."""
+        try:
+            outcome["result"] = asyncio.run(coroutine)
+        except BaseException as error:  # noqa: BLE001 - re-raise in the workflow worker.
+            outcome["error"] = error
+
+    worker = Thread(target=execute, daemon=True)
+    worker.start()
+    worker.join()
+    if error := outcome.get("error"):
+        raise error
+    return outcome["result"]
 
 
 def validate_incident_request(state: InvestigationWorkflowState) -> dict:
@@ -70,6 +92,7 @@ def build_investigation_workflow(
     checkpointer: Any | None = None,
 ):
     def run_supervisor_investigation(state: InvestigationWorkflowState) -> dict:
+        """Run async specialist tools safely from the durable synchronous workflow node."""
         active_supervisor = supervisor
         if active_supervisor is None:
             # Import only when an investigation starts; FastAPI can still start
@@ -80,16 +103,25 @@ def build_investigation_workflow(
 
             active_supervisor = build_investigation_supervisor()
         try:
-            result = active_supervisor.invoke(
-                {"messages": [{"role": "user", "content": state["incident_request"]}]},
-                config={"recursion_limit": 14},
-            )
+            payload = {"messages": [{"role": "user", "content": state["incident_request"]}]}
+            config = {"recursion_limit": 14}
+            if hasattr(active_supervisor, "ainvoke"):
+                result = _run_coroutine_in_worker(active_supervisor.ainvoke(payload, config=config))
+            else:
+                result = active_supervisor.invoke(payload, config=config)
         except OpenAIAuthenticationError:
             return {
                 "investigation_lifecycle": "failed",
                 "workflow_stage": "supervisor_failed",
                 "report": None,
                 "errors": ["OpenAI authentication failed."],
+            }
+        except Exception as error:  # noqa: BLE001 - persist a safe operator diagnosis.
+            return {
+                "investigation_lifecycle": "failed",
+                "workflow_stage": "supervisor_failed",
+                "report": None,
+                "errors": [f"Supervisor execution failed: {type(error).__name__}."],
             }
 
         return {

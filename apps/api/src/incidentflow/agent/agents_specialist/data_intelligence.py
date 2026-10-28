@@ -1,5 +1,9 @@
 from langchain.agents import create_agent
-from langchain.agents.middleware import AgentMiddleware, ToolCallLimitMiddleware
+from langchain.agents.middleware import (
+    AgentMiddleware,
+    ModelCallLimitMiddleware,
+    ToolCallLimitMiddleware,
+)
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
@@ -30,6 +34,11 @@ def build_data_intelligence_middleware() -> list[AgentMiddleware]:
             run_limit=1,
             exit_behavior="continue",
         ),
+        # Schema discovery, one evidence query, interpretation, and the
+        # structured response should fit in five model turns.  The explicit
+        # ceiling makes a malformed MCP reply fail safely instead of consuming
+        # the graph recursion budget in a retry loop.
+        ModelCallLimitMiddleware(run_limit=5, exit_behavior="end"),
     ]
 
 
@@ -54,3 +63,15 @@ def build_data_intelligence_agent(mongodb_tools: list[BaseTool]):
         middleware=build_data_intelligence_middleware(),
         response_format=ToolStrategy(DataIntelligenceFinding),
     )
+
+
+def build_data_intelligence_analysis_model():
+    """Build the one-shot structured analyst used after bounded MongoDB reads."""
+    settings = get_settings()
+    model = ChatOpenAI(
+        model=settings.openai_model,
+        api_key=settings.openai_api_key,
+        temperature=0,
+        timeout=settings.openai_timeout_seconds,
+    )
+    return model.with_structured_output(DataIntelligenceFinding)

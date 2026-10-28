@@ -18,7 +18,18 @@ async def run() -> None:
                 "collection": settings.mongodb_mcp_events_collection,
             }
         )
-    print(result)
+        aggregate_tool = tool_set.get("aggregate")
+        events = await aggregate_tool.ainvoke(
+            {
+                "database": settings.mongodb_mcp_database,
+                "collection": settings.mongodb_mcp_events_collection,
+                "pipeline": [
+                    {"$sort": {"timestamp": 1}},
+                    {"$limit": 20},
+                ],
+            }
+        )
+    print({"schema": result, "events": events})
 
 
 if __name__ == "__main__":

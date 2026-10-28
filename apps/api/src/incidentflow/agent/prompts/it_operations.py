@@ -8,6 +8,8 @@ IT_OPERATIONS_SYSTEM_PROMPT = (
     "Never invent a cloud ID; use only an ID returned by that tool. "
     "Use searchJiraIssuesUsingJql to find relevant tickets, then getJiraIssue only when the "
     "search result requires more detail. "
+    "Do not put status names in JQL unless you first obtained those exact values from Jira; "
+    "search by incident terms and recent update time instead. "
     "Follow this sequence exactly: call getAccessibleAtlassianResources once; if it returns a resource, "
     "call search once with that cloud ID; then make no further tool calls and return the structured finding. "
     "If no resource is returned, make no search call and return unavailable evidence. "

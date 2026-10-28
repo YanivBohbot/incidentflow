@@ -2,7 +2,7 @@
 
 import asyncio
 
-from incidentflow.agent.tools.specialist_delegation import _run_real_github
+from incidentflow.agent.tools.github_tools import _analyse_incident_related_github_changes
 from incidentflow.core.config import get_settings
 
 INCIDENT_CONTEXT = (
@@ -15,7 +15,7 @@ async def main() -> int:
     if not settings.github_mcp_enabled or not settings.github_mcp_allowed_repositories:
         raise RuntimeError("Enable GitHub MCP and configure GITHUB_MCP_REPOSITORIES first.")
 
-    print(await _run_real_github(INCIDENT_CONTEXT))
+    print(await _analyse_incident_related_github_changes(INCIDENT_CONTEXT))
 
     return 0
 
