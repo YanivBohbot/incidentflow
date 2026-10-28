@@ -97,7 +97,9 @@ def test_jira_client_uses_encrypted_persistent_oauth_when_configured(monkeypatch
 
 def test_jira_client_rejects_partially_configured_oauth_persistence(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("MCP_OAUTH_TOKEN_STORE_DIR", str(tmp_path / "oauth-tokens"))
-    monkeypatch.delenv("MCP_OAUTH_STORAGE_ENCRYPTION_KEY", raising=False)
+    # An empty process value deliberately overrides a developer's local .env
+    # secret so this test can exercise the partially configured case.
+    monkeypatch.setenv("MCP_OAUTH_STORAGE_ENCRYPTION_KEY", "")
     get_settings.cache_clear()
 
     try:

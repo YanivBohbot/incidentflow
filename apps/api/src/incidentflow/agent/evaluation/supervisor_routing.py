@@ -1,8 +1,8 @@
 """Deterministic checks for the Supervisor's delegated-tool behavior."""
 
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 
 @dataclass(frozen=True)

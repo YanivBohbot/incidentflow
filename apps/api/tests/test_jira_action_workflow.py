@@ -1,4 +1,3 @@
-import asyncio
 from uuid import uuid4
 
 import pytest
@@ -125,6 +124,9 @@ def test_repeat_approval_does_not_resume_an_executed_human_review() -> None:
             raise AssertionError("An executed proposal must not resume the HITL workflow.")
 
     with pytest.raises(HTTPException) as error:
-        asyncio.run(approve_proposal(proposal.id, FakeApprovalService(), FakeReviewWorkflow()))
+        # The state guard runs before the route reaches its first await.  Driving the
+        # coroutine once verifies that guard without starting an event loop solely
+        # to receive this synchronous HTTP 409 response.
+        approve_proposal(proposal.id, FakeApprovalService(), FakeReviewWorkflow()).send(None)
 
     assert error.value.status_code == 409

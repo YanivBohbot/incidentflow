@@ -1,10 +1,10 @@
 """Least-privilege client for a GitHub MCP server."""
 
+import os
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass
-import os
 
 from fastmcp import Client
 from fastmcp.client import StdioTransport

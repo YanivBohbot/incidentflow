@@ -6,9 +6,9 @@ from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
+from cryptography.fernet import Fernet
 from fastmcp import Client
 from fastmcp.client.auth import OAuth
-from cryptography.fernet import Fernet
 from key_value.aio.stores.disk import DiskStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from langchain.mcp import MCPAdapter
