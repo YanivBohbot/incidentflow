@@ -1,6 +1,10 @@
 import asyncio
 
-from langchain.agents.middleware import LLMToolSelectorMiddleware, ToolCallLimitMiddleware
+from langchain.agents.middleware import (
+    LLMToolSelectorMiddleware,
+    ToolCallLimitMiddleware,
+    ToolRetryMiddleware,
+)
 from langchain_openai import ChatOpenAI
 
 from incidentflow.agent.agents_specialist.contracts import (
@@ -131,6 +135,21 @@ def test_supervisor_allows_dynamic_selection_but_bounds_each_delegation() -> Non
     assert selectors[0].max_tools == 4
     assert "exactly once" not in SUPERVISOR_SYSTEM_PROMPT
     assert "Select only the specialist delegations needed" in SUPERVISOR_SYSTEM_PROMPT
+
+    retries = [
+        middleware
+        for middleware in build_supervisor_middleware()
+        if isinstance(middleware, ToolRetryMiddleware)
+    ]
+    assert len(retries) == 1
+    assert retries[0].max_retries == 1
+    # LangChain stores string-based tool filters in this private compatibility field.
+    assert set(retries[0]._tool_filter) == {
+        "ask_it_operations",
+        "ask_data_intelligence",
+        "ask_knowledge",
+        "ask_github",
+    }
 
 
 def test_supervisor_selector_accepts_the_configured_chat_model() -> None:

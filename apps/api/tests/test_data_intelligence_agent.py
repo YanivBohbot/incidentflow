@@ -40,6 +40,7 @@ def test_data_intelligence_agent_builds_without_a_model_request(monkeypatch) -> 
         ("aggregate", 1),
         ("find", 1),
     }
+    assert {limiter.exit_behavior for limiter in limiters} == {"continue"}
 
 
 def test_data_intelligence_finding_separates_events_from_causes() -> None:

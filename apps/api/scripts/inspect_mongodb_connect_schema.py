@@ -9,7 +9,9 @@ from incidentflow.core.config import get_settings
 
 async def run() -> None:
     settings = get_settings()
-    tools = await MongoDBMCPClient(settings.mongodb_mcp_url).list_tools()
+    tools = await MongoDBMCPClient(
+        settings.mongodb_mcp_url, settings.mongodb_mcp_connection_string
+    ).list_tools()
     connect = next(tool for tool in tools if tool.name == "connect")
     schema = connect.args_schema
     if isinstance(schema, dict):

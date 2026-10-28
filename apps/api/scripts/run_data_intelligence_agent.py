@@ -5,6 +5,7 @@ import asyncio
 
 from langchain_openai.chat_models.base import OpenAIAuthenticationError
 
+from incidentflow.agent.agents_specialist.contracts import DataIntelligenceFinding
 from incidentflow.agent.agents_specialist.data_intelligence import (
     build_data_intelligence_agent,
 )
@@ -34,7 +35,9 @@ async def run(incident: str) -> None:
     if not settings.mongodb_mcp_enabled:
         raise RuntimeError("Set MONGODB_MCP_ENABLED=true before running this live MongoDB demo.")
 
-    async with MongoDBMCPClient(settings.mongodb_mcp_url).read_tools() as tool_set:
+    async with MongoDBMCPClient(
+        settings.mongodb_mcp_url, settings.mongodb_mcp_connection_string
+    ).read_tools() as tool_set:
         agent = build_data_intelligence_agent(tool_set.read_tools)
         result = await agent.ainvoke(
             {"messages": [{"role": "user", "content": incident}]},
@@ -48,7 +51,14 @@ async def run(incident: str) -> None:
         print(f"\n[{message.type}]")
         print(message.content)
 
-    finding = result["structured_response"]
+    finding = result.get("structured_response") or DataIntelligenceFinding(
+        summary="MongoDB investigation stopped before a structured finding was produced.",
+        timeline=[],
+        error_signatures=[],
+        evidence=[],
+        suspected_root_causes=[],
+        confidence=0,
+    )
     print("\n[structured_response]")
     print(finding.model_dump_json(indent=2))
 

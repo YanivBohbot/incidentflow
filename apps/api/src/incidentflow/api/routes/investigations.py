@@ -32,6 +32,7 @@ def get_investigation_service(
         InvestigationRepository(session),
         IncidentRepository(session),
         request.app.state.investigation_workflow,
+        request.app.state.operational_metrics,
     )
 
 

@@ -1,6 +1,7 @@
 from typing import Any
 from uuid import UUID
 
+from incidentflow.core.operational_metrics import OperationalMetrics
 from incidentflow.domain.investigations.models import (
     Investigation,
     InvestigationCreate,
@@ -18,10 +19,12 @@ class InvestigationService:
         repository: InvestigationRepository,
         incident_repository: IncidentRepository,
         workflow: Any,
+        metrics: OperationalMetrics | None = None,
     ) -> None:
         self.repository = repository
         self.incident_repository = incident_repository
         self.workflow = workflow
+        self.metrics = metrics
 
     def start_investigation(self, data: InvestigationStart) -> Investigation | None:
         incident = self.incident_repository.get_incident(data.incident_id)
@@ -63,6 +66,7 @@ class InvestigationService:
             )
             if failed is None:
                 raise RuntimeError("Failed investigation could not be persisted.")
+            self._record_lifecycle(failed.lifecycle.value)
             return failed
 
         report = result["report"]
@@ -70,10 +74,17 @@ class InvestigationService:
             completed = self.repository.complete_investigation(running.id, report)
             if completed is None:
                 raise RuntimeError("Completed investigation could not be persisted.")
+            self._record_lifecycle(completed.lifecycle.value)
             return completed
 
         error_message = "; ".join(result["errors"]) or "Investigation workflow failed."
         failed = self.repository.fail_investigation(running.id, error_message)
         if failed is None:
             raise RuntimeError("Failed investigation could not be persisted.")
+        self._record_lifecycle(failed.lifecycle.value)
         return failed
+
+    def _record_lifecycle(self, lifecycle: str) -> None:
+        """Record the final durable state without collecting incident content."""
+        if self.metrics is not None:
+            self.metrics.record_investigation(lifecycle)

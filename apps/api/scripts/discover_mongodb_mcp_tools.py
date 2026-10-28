@@ -8,7 +8,9 @@ from incidentflow.core.config import get_settings
 
 async def run() -> None:
     settings = get_settings()
-    client = MongoDBMCPClient(settings.mongodb_mcp_url)
+    client = MongoDBMCPClient(
+        settings.mongodb_mcp_url, settings.mongodb_mcp_connection_string
+    )
     tools = await client.list_tools()
     approved = select_read_tools(tools)
 

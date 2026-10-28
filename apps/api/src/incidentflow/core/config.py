@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     github_personal_access_token: str | None = None
     mongodb_mcp_url: str = "http://127.0.0.1:3000/mcp"
     mongodb_mcp_enabled: bool = False
+    mongodb_mcp_connection_string: str = "mongodb://127.0.0.1:27017/?directConnection=true"
     mongodb_mcp_database: str = "incidentflow_dev"
     mongodb_mcp_events_collection: str = "operational_events"
     pinecone_api_key: str | None = None

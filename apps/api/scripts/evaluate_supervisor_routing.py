@@ -11,7 +11,6 @@ from langchain_openai import ChatOpenAI
 
 from incidentflow.agent.evaluation.supervisor_routing import (
     SUPERVISOR_ROUTING_SCENARIOS,
-    SupervisorRoutingScenario,
     assess_delegations,
 )
 from incidentflow.agent.orchestration.supervisor import build_supervisor_middleware
@@ -86,9 +85,11 @@ def _build_evaluation_supervisor():
         tools=[ask_it_operations, ask_data_intelligence, ask_knowledge, ask_github],
         name="supervisor_routing_evaluation",
         system_prompt=(
-            "You are evaluating dynamic specialist routing. Use every available specialist tool "
-            "exactly once, and use no unavailable specialist. Do not infer evidence yourself. "
-            "After tool results, return a concise acknowledgement."
+            "You are evaluating dynamic specialist routing. Select only the specialist tools "
+            "necessary for the user's request and obey any explicit exclusions. Do not call a "
+            "tool merely because it is available. Use each selected specialist at most once "
+            "unless a follow-up is necessary. Do not infer evidence yourself. After tool results, "
+            "return a concise acknowledgement."
         ),
         middleware=build_supervisor_middleware(model),
     )

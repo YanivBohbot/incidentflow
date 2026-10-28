@@ -8,6 +8,7 @@ Create Date: 2026-10-28
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
@@ -18,8 +19,12 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    incident_lesson_state = sa.Enum(
-        "PENDING_INDEX", "CONFIRMED", "INDEX_FAILED", name="incident_lesson_state"
+    incident_lesson_state = postgresql.ENUM(
+        "PENDING_INDEX",
+        "CONFIRMED",
+        "INDEX_FAILED",
+        name="incident_lesson_state",
+        create_type=False,
     )
     incident_lesson_state.create(op.get_bind(), checkfirst=True)
     op.create_table(

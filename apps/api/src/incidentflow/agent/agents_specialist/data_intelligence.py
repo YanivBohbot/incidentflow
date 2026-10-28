@@ -18,17 +18,17 @@ def build_data_intelligence_middleware() -> list[AgentMiddleware]:
         ToolCallLimitMiddleware(
             tool_name="collection-schema",
             run_limit=1,
-            exit_behavior="end",
+            exit_behavior="continue",
         ),
         ToolCallLimitMiddleware(
             tool_name="aggregate",
             run_limit=1,
-            exit_behavior="end",
+            exit_behavior="continue",
         ),
         ToolCallLimitMiddleware(
             tool_name="find",
             run_limit=1,
-            exit_behavior="end",
+            exit_behavior="continue",
         ),
     ]
 

@@ -4,7 +4,9 @@ from langchain_core.tools import tool
 from incidentflow.agent.mcp_clients.mongodb import (
     MONGODB_READ_TOOL_NAMES,
     MONGODB_TOOL_DESCRIPTIONS,
+    _connection_id_from_result,
     _openai_compatible_schema,
+    _remove_connection_id,
     select_read_tools,
 )
 
@@ -56,3 +58,22 @@ def test_schema_removes_property_names_from_mongodb_tool_arguments() -> None:
         "properties": {},
     }
     assert schema["properties"]["sort"]["propertyNames"] == {"pattern": "^[a-z_]+$"}
+
+
+def test_connection_id_is_extracted_and_hidden_from_the_model_schema() -> None:
+    schema = {
+        "type": "object",
+        "properties": {"connectionId": {"type": "string"}, "database": {"type": "string"}},
+        "required": ["connectionId", "database"],
+    }
+
+    _remove_connection_id(schema)
+
+    assert _connection_id_from_result(
+        [{"text": 'Successfully connected. Your connectionId is "connection-123".'}]
+    ) == "connection-123"
+    assert schema == {
+        "type": "object",
+        "properties": {"database": {"type": "string"}},
+        "required": ["database"],
+    }

@@ -8,7 +8,9 @@ from incidentflow.core.config import get_settings
 
 async def run() -> None:
     settings = get_settings()
-    async with MongoDBMCPClient(settings.mongodb_mcp_url).read_tools() as tool_set:
+    async with MongoDBMCPClient(
+        settings.mongodb_mcp_url, settings.mongodb_mcp_connection_string
+    ).read_tools() as tool_set:
         schema_tool = tool_set.get("collection-schema")
         result = await schema_tool.ainvoke(
             {

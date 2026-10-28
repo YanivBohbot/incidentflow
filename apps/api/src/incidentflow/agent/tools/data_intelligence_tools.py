@@ -19,7 +19,9 @@ async def _investigate_incident_with_mongodb(incident_context: str) -> str:
     The specialist receives only the read-only tools exposed by the MCP client.
     """
     settings = get_settings()
-    async with MongoDBMCPClient(settings.mongodb_mcp_url).read_tools() as tool_set:
+    async with MongoDBMCPClient(
+        settings.mongodb_mcp_url, settings.mongodb_mcp_connection_string
+    ).read_tools() as tool_set:
         agent = build_data_intelligence_agent(mongodb_tools=tool_set.read_tools)
         result = await agent.ainvoke(
             {"messages": [{"role": "user", "content": incident_context}]},
@@ -28,7 +30,17 @@ async def _investigate_incident_with_mongodb(incident_context: str) -> str:
                 "configurable": {"thread_id": f"data-intelligence:{uuid4()}"},
             },
         )
-        return result["structured_response"].model_dump_json()
+        finding = result.get("structured_response")
+        if finding is None:
+            return DataIntelligenceFinding(
+                summary="MongoDB investigation stopped before a structured finding was produced.",
+                timeline=[],
+                error_signatures=[],
+                evidence=[],
+                suspected_root_causes=[],
+                confidence=0,
+            ).model_dump_json()
+        return finding.model_dump_json()
 
 
 @tool(

@@ -3,6 +3,7 @@ from langchain.agents.middleware import (
     AgentMiddleware,
     LLMToolSelectorMiddleware,
     ToolCallLimitMiddleware,
+    ToolRetryMiddleware,
 )
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_openai import ChatOpenAI
@@ -27,12 +28,25 @@ TOOL_SELECTION_SYSTEM_PROMPT = (
 
 
 def build_supervisor_middleware(model: BaseChatModel | str | None = None) -> list[AgentMiddleware]:
-    """Allow dynamic specialist selection while bounding repeated delegations."""
+    """Allow bounded specialist selection and retry only idempotent read delegations."""
     return [
         LLMToolSelectorMiddleware(
             model=model,
             system_prompt=TOOL_SELECTION_SYSTEM_PROMPT,
             max_tools=4,
+        ),
+        ToolRetryMiddleware(
+            tools=[
+                "ask_it_operations",
+                "ask_data_intelligence",
+                "ask_knowledge",
+                "ask_github",
+            ],
+            max_retries=1,
+            initial_delay=0.25,
+            max_delay=0.5,
+            retry_on=(ConnectionError, TimeoutError, OSError),
+            on_failure="continue",
         ),
         *build_shared_middleware(),
         *[
