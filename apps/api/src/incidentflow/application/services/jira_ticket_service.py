@@ -1,5 +1,6 @@
 """Application service for the constrained, human-approved Jira ticket flow."""
 
+import json
 from typing import TYPE_CHECKING, Any
 
 from incidentflow.core.config import Settings
@@ -15,6 +16,10 @@ if TYPE_CHECKING:
 
 class JiraMCPNotEnabledError(RuntimeError):
     """Raised when Jira MCP has not been deliberately enabled by an administrator."""
+
+
+class JiraMCPWriteRejectedError(RuntimeError):
+    """Raised when Jira returns an application-level error inside an MCP tool response."""
 
 
 class JiraTicketService:
@@ -76,6 +81,8 @@ class JiraTicketService:
             client = JiraMCPClient(self.settings.jira_mcp_url)
         async with client.ticket_tools() as tool_set:
             result = await tool_set.get(operation).ainvoke(arguments)
+        if _contains_jira_write_error(result):
+            raise JiraMCPWriteRejectedError("Jira rejected the requested write operation.")
         return JiraMCPResult(operation=operation, result=_serializable_result(result))
 
 
@@ -86,3 +93,24 @@ def _serializable_result(result: Any) -> Any:
     if hasattr(result, "content"):
         return {"content": result.content}
     return str(result)
+
+
+def _contains_jira_write_error(result: Any) -> bool:
+    """Recognize Jira's structured business errors returned as successful MCP transport data."""
+    blocks = result if isinstance(result, list) else [result]
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        text = block.get("text")
+        if not isinstance(text, str):
+            continue
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        data = payload.get("data", payload) if isinstance(payload, dict) else {}
+        if not isinstance(data, dict):
+            continue
+        if data.get("error") or (isinstance(data.get("status"), int) and data["status"] >= 400):
+            return True
+    return False

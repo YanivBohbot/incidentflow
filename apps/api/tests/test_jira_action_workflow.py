@@ -1,14 +1,18 @@
+import asyncio
 from uuid import uuid4
 
+import pytest
+from fastapi import HTTPException
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
 from incidentflow.agent.orchestration.jira_action_workflow import build_jira_action_workflow
-from incidentflow.api.routes.jira import propose_issue
+from incidentflow.api.routes.jira import approve_proposal, propose_issue
 from incidentflow.domain.jira.models import (
     JiraActionProposal,
     JiraIssueCreateRequest,
     JiraProposalAction,
+    JiraProposalState,
 )
 
 
@@ -102,3 +106,25 @@ def test_created_jira_proposal_starts_a_durable_human_review() -> None:
             {"configurable": {"thread_id": f"jira-proposal:{proposal.id}"}},
         )
     ]
+
+
+def test_repeat_approval_does_not_resume_an_executed_human_review() -> None:
+    proposal = JiraActionProposal(
+        action=JiraProposalAction.CREATE_ISSUE,
+        investigation_id=uuid4(),
+        state=JiraProposalState.EXECUTED,
+        payload={},
+    )
+
+    class FakeApprovalService:
+        def get_proposal(self, requested_id):
+            return proposal if requested_id == proposal.id else None
+
+    class FakeReviewWorkflow:
+        def invoke(self, payload, config):
+            raise AssertionError("An executed proposal must not resume the HITL workflow.")
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(approve_proposal(proposal.id, FakeApprovalService(), FakeReviewWorkflow()))
+
+    assert error.value.status_code == 409

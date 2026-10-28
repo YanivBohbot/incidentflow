@@ -1,3 +1,4 @@
+import json
 from contextlib import asynccontextmanager
 
 import pytest
@@ -5,6 +6,7 @@ import pytest
 from incidentflow.agent.mcp_clients.jira import JiraMCPToolSet
 from incidentflow.application.services.jira_ticket_service import (
     JiraMCPNotEnabledError,
+    JiraMCPWriteRejectedError,
     JiraTicketService,
 )
 from incidentflow.core.config import Settings
@@ -27,6 +29,23 @@ class FakeJiraMCPClient:
         self.ticket_connection_open = True
         try:
             yield JiraMCPToolSet(read_tools=[], write_tools=[FakeCreateJiraIssueTool()])
+        finally:
+            self.ticket_connection_open = False
+
+
+class FakeRejectedCreateJiraIssueTool:
+    name = "createJiraIssue"
+
+    async def ainvoke(self, arguments: dict[str, str]) -> list[dict[str, str]]:
+        return [{"type": "text", "text": json.dumps({"data": {"error": "CREATE_FAILED", "status": 400}})}]
+
+
+class FakeRejectedJiraMCPClient(FakeJiraMCPClient):
+    @asynccontextmanager
+    async def ticket_tools(self):
+        self.ticket_connection_open = True
+        try:
+            yield JiraMCPToolSet(read_tools=[], write_tools=[FakeRejectedCreateJiraIssueTool()])
         finally:
             self.ticket_connection_open = False
 
@@ -78,4 +97,20 @@ def test_ticket_creation_requires_an_explicit_write_enablement() -> None:
     )
 
     with pytest.raises(JiraMCPNotEnabledError, match="writes are disabled"):
+        _run_immediate(service.create_issue(request))
+
+
+def test_ticket_creation_rejects_jira_business_errors_inside_an_mcp_response() -> None:
+    service = JiraTicketService(
+        _settings(enabled=True, writes_enabled=True), client=FakeRejectedJiraMCPClient()
+    )
+    request = JiraIssueCreateRequest(
+        cloudId="cloud-123",
+        projectKey="OPS",
+        issueType="Task",
+        summary="Payment API is returning HTTP 500",
+        description="Created from IncidentFlow after human review.",
+    )
+
+    with pytest.raises(JiraMCPWriteRejectedError, match="Jira rejected"):
         _run_immediate(service.create_issue(request))

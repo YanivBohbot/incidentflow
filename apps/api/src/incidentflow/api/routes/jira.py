@@ -34,6 +34,7 @@ from incidentflow.domain.jira.models import (
     JiraIssueCreateRequest,
     JiraMCPResult,
     JiraProposalDecision,
+    JiraProposalState,
 )
 from incidentflow.infrastructure.database.jira_proposal_repository import JiraProposalRepository
 
@@ -87,6 +88,12 @@ def _resume_proposal_review(review_workflow: Any, proposal: JiraActionProposal, 
         Command(resume=decision),
         config={"configurable": {"thread_id": _proposal_thread_id(proposal)}},
     )
+
+
+def _require_pending_proposal(proposal: JiraActionProposal) -> None:
+    """Reject a repeated decision before it can resume a completed HITL workflow."""
+    if proposal.state is not JiraProposalState.PENDING:
+        raise JiraProposalNotApprovableError("Only a pending Jira proposal can be decided.")
 
 
 @router.get("/resources", response_model=JiraMCPResult)
@@ -206,6 +213,7 @@ async def approve_proposal(
         proposal = approval_service.get_proposal(proposal_id)
         if proposal is None:
             raise JiraProposalNotFoundError
+        _require_pending_proposal(proposal)
         _resume_proposal_review(review_workflow, proposal, "approve")
         return await approval_service.approve_and_execute(proposal_id)
     except JiraProposalNotFoundError as error:
@@ -225,6 +233,7 @@ def reject_proposal(
         proposal = approval_service.get_proposal(proposal_id)
         if proposal is None:
             raise JiraProposalNotFoundError
+        _require_pending_proposal(proposal)
         _resume_proposal_review(review_workflow, proposal, "reject")
         return approval_service.reject(proposal_id, actor=decision.actor, reason=decision.reason)
     except JiraProposalNotFoundError as error:
@@ -244,6 +253,7 @@ def cancel_proposal(
         proposal = approval_service.get_proposal(proposal_id)
         if proposal is None:
             raise JiraProposalNotFoundError
+        _require_pending_proposal(proposal)
         _resume_proposal_review(review_workflow, proposal, "cancel")
         return approval_service.cancel(proposal_id, actor=decision.actor, reason=decision.reason)
     except JiraProposalNotFoundError as error:
