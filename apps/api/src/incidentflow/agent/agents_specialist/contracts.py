@@ -2,6 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from incidentflow.domain.human_review.models import HumanReviewRecommendation
+
 
 class InvestigationEvidence(BaseModel):
     source: str = Field(description="System or document that produced this evidence.")
@@ -139,6 +141,13 @@ class InvestigationReport(BaseModel):
     proposed_actions: list[str] = Field(
         default_factory=list,
         description="Recommendations only; no action is executed by this report.",
+    )
+    review_recommendation: HumanReviewRecommendation | None = Field(
+        default=None,
+        description=(
+            "Optional structured request for application-controlled human review; "
+            "it never authorizes an action by itself."
+        ),
     )
     limitations: list[str] = Field(
         default_factory=list,

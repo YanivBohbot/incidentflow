@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from incidentflow.agent.agents_specialist.contracts import InvestigationReport
+from incidentflow.domain.human_review.models import HumanReviewRequest
 from incidentflow.domain.investigations.models import (
     Investigation,
     InvestigationCreate,
@@ -23,6 +24,11 @@ class InvestigationRepository:
             if orm.report_payload is not None
             else None
         )
+        pending_human_review = (
+            HumanReviewRequest.model_validate(orm.pending_human_review_payload)
+            if orm.pending_human_review_payload is not None
+            else None
+        )
         return Investigation.model_validate(
             {
                 "id": orm.id,
@@ -32,6 +38,7 @@ class InvestigationRepository:
                 "lifecycle": orm.lifecycle,
                 "workflow_thread_id": orm.workflow_thread_id,
                 "report": report,
+                "pending_human_review": pending_human_review,
                 "error_message": orm.error_message,
                 "created_at": orm.created_at,
                 "updated_at": orm.updated_at,
@@ -90,6 +97,26 @@ class InvestigationRepository:
 
         orm.lifecycle = InvestigationLifecycle.COMPLETED
         orm.report_payload = report.model_dump(mode="json")
+        orm.pending_human_review_payload = None
+        orm.error_message = None
+        self.session.commit()
+        self.session.refresh(orm)
+        return self.to_domain(orm)
+
+    def mark_awaiting_human_review(
+        self,
+        investigation_id: UUID,
+        report: InvestigationReport,
+        review: HumanReviewRequest,
+    ) -> Investigation | None:
+        """Persist the report and review payload before the graph waits for an operator."""
+        orm = self.session.get(InvestigationORM, investigation_id)
+        if orm is None:
+            return None
+
+        orm.lifecycle = InvestigationLifecycle.AWAITING_HUMAN_REVIEW
+        orm.report_payload = report.model_dump(mode="json")
+        orm.pending_human_review_payload = review.model_dump(mode="json")
         orm.error_message = None
         self.session.commit()
         self.session.refresh(orm)
@@ -103,6 +130,7 @@ class InvestigationRepository:
             return None
 
         orm.lifecycle = InvestigationLifecycle.FAILED
+        orm.pending_human_review_payload = None
         orm.error_message = error_message
         self.session.commit()
         self.session.refresh(orm)

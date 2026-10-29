@@ -75,6 +75,7 @@ class InvestigationORM(Base):
     )
     workflow_thread_id: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     report_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    pending_human_review_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
