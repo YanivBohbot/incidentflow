@@ -1,6 +1,13 @@
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command
+
 from incidentflow.agent.agents_specialist.contracts import InvestigationReport
 from incidentflow.agent.orchestration.investigation_workflow import (
     build_investigation_workflow,
+)
+from incidentflow.domain.human_review.models import (
+    HumanReviewRecommendation,
+    HumanReviewType,
 )
 
 
@@ -12,6 +19,16 @@ class FakeSupervisor:
         assert payload["messages"][0]["content"] == "Payment API HTTP 500"
         assert config == {"recursion_limit": 14}
         return {"structured_response": self.report}
+
+
+class UnavailableSupervisor:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def invoke(self, _payload: dict, config: dict) -> dict:
+        assert config == {"recursion_limit": 14}
+        self.calls += 1
+        raise TimeoutError("provider timeout details must not reach the operator")
 
 
 def test_invalid_request_finishes_without_building_the_supervisor() -> None:
@@ -49,3 +66,55 @@ def test_valid_request_runs_supervisor_and_finalizes_report() -> None:
     assert result["workflow_stage"] == "finished"
     assert result["report"] == report
     assert result["errors"] == []
+
+
+def test_review_recommendation_interrupts_the_main_investigation_thread() -> None:
+    report = InvestigationReport(
+        summary="A Jira issue should be created for the confirmed production impact.",
+        confidence=0.8,
+        review_recommendation=HumanReviewRecommendation(
+            review_type=HumanReviewType.JIRA_WRITE,
+            reason="Escalate the confirmed payment API outage.",
+            evidence_references=["mongodb:event-17"],
+            draft={"summary": "Payment API incident"},
+        ),
+    )
+    executed_actions: list[object] = []
+    workflow = build_investigation_workflow(
+        FakeSupervisor(report),
+        checkpointer=InMemorySaver(),
+        action_executor=lambda _review, _decision: executed_actions.append("called") or {},
+    )
+    config = {"configurable": {"thread_id": "investigation:human-review"}}
+
+    pending = workflow.invoke(
+        {"incident_request": "Payment API HTTP 500", "incident_business_status": "open"},
+        config=config,
+    )
+
+    assert pending["__interrupt__"][0].value["review_type"] == "JIRA_WRITE"
+    assert pending["__interrupt__"][0].value["draft"] == {
+        "summary": "Payment API incident"
+    }
+
+    resumed = workflow.invoke(
+        Command(resume={"decision": "REJECT", "actor": "on-call-operator"}),
+        config=config,
+    )
+
+    assert resumed["investigation_lifecycle"] == "completed"
+    assert resumed["workflow_stage"] == "finished"
+    assert executed_actions == []
+
+
+def test_exhausted_read_retry_becomes_a_safe_workflow_failure() -> None:
+    supervisor = UnavailableSupervisor()
+    workflow = build_investigation_workflow(supervisor)
+
+    result = workflow.invoke(
+        {"incident_request": "Payment API HTTP 500", "incident_business_status": "open"},
+    )
+
+    assert supervisor.calls == 2
+    assert result["investigation_lifecycle"] == "failed"
+    assert result["errors"] == ["One or more external sources could not be reached."]
