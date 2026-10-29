@@ -22,28 +22,14 @@ class HumanReviewDecisionKind(str, Enum):
     REQUEST_INFORMATION = "REQUEST_INFORMATION"
 
 
-class HumanReviewRecommendation(BaseModel):
-    """A structured recommendation that still requires application policy validation."""
+class HumanReview(BaseModel):
+    """The single review payload paused in the workflow and shown to an operator."""
 
+    id: UUID = Field(default_factory=uuid4)
     review_type: HumanReviewType
     reason: str = Field(min_length=1, max_length=2_000)
     evidence_references: list[str] = Field(default_factory=list, max_length=50)
     draft: dict[str, str] = Field(default_factory=dict)
-
-
-class HumanReviewRequest(HumanReviewRecommendation):
-    """The durable, operator-facing review request stored in workflow state."""
-
-    id: UUID = Field(default_factory=uuid4)
-
-    @classmethod
-    def from_recommendation(
-        cls, recommendation: HumanReviewRecommendation
-    ) -> "HumanReviewRequest":
-        """Assign a durable review ID to a recommendation accepted by policy."""
-        return cls(**recommendation.model_dump())
-
-
 class HumanReviewDecision(BaseModel):
     """The explicit JSON-safe response supplied by an authenticated operator."""
 

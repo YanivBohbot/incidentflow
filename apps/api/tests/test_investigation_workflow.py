@@ -6,7 +6,7 @@ from incidentflow.agent.orchestration.investigation_workflow import (
     build_investigation_workflow,
 )
 from incidentflow.domain.human_review.models import (
-    HumanReviewRecommendation,
+    HumanReview,
     HumanReviewType,
 )
 
@@ -68,22 +68,20 @@ def test_valid_request_runs_supervisor_and_finalizes_report() -> None:
     assert result["errors"] == []
 
 
-def test_review_recommendation_interrupts_the_main_investigation_thread() -> None:
+def test_human_review_interrupts_the_main_investigation_thread() -> None:
     report = InvestigationReport(
         summary="A Jira issue should be created for the confirmed production impact.",
         confidence=0.8,
-        review_recommendation=HumanReviewRecommendation(
+        human_review=HumanReview(
             review_type=HumanReviewType.JIRA_WRITE,
             reason="Escalate the confirmed payment API outage.",
             evidence_references=["mongodb:event-17"],
             draft={"summary": "Payment API incident"},
         ),
     )
-    executed_actions: list[object] = []
     workflow = build_investigation_workflow(
         FakeSupervisor(report),
         checkpointer=InMemorySaver(),
-        action_executor=lambda _review, _decision: executed_actions.append("called") or {},
     )
     config = {"configurable": {"thread_id": "investigation:human-review"}}
 
@@ -104,7 +102,6 @@ def test_review_recommendation_interrupts_the_main_investigation_thread() -> Non
 
     assert resumed["investigation_lifecycle"] == "completed"
     assert resumed["workflow_stage"] == "finished"
-    assert executed_actions == []
 
 
 def test_exhausted_read_retry_becomes_a_safe_workflow_failure() -> None:

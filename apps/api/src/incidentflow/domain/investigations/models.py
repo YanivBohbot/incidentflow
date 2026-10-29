@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Field
 
 from incidentflow.agent.agents_specialist.contracts import InvestigationReport
-from incidentflow.domain.human_review.models import HumanReviewRequest
+from incidentflow.domain.human_review.models import HumanReview
 
 
 class InvestigationLifecycle(str, Enum):
@@ -39,7 +39,7 @@ class Investigation(BaseModel):
     lifecycle: InvestigationLifecycle = InvestigationLifecycle.PENDING
     workflow_thread_id: str
     report: InvestigationReport | None = None
-    pending_human_review: HumanReviewRequest | None = None
+    human_review: HumanReview | None = None
     error_message: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)

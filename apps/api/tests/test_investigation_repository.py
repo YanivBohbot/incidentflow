@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from incidentflow.agent.agents_specialist.contracts import InvestigationReport
-from incidentflow.domain.human_review.models import HumanReviewRequest, HumanReviewType
+from incidentflow.domain.human_review.models import HumanReview, HumanReviewType
 from incidentflow.domain.incidents.models import IncidentPriority
 from incidentflow.domain.investigations.models import (
     InvestigationCreate,
@@ -81,7 +81,7 @@ def test_repository_persists_a_pending_human_review() -> None:
             )
         )
         report = InvestigationReport(summary="Review needed.", confidence=0.8)
-        review = HumanReviewRequest(
+        review = HumanReview(
             review_type=HumanReviewType.INSUFFICIENT_EVIDENCE,
             reason="An operator must provide the missing deployment identifier.",
             evidence_references=["mongodb:event-17"],
@@ -92,4 +92,4 @@ def test_repository_persists_a_pending_human_review() -> None:
         assert awaiting is not None
         assert awaiting.lifecycle is InvestigationLifecycle.AWAITING_HUMAN_REVIEW
         assert awaiting.report == report
-        assert awaiting.pending_human_review == review
+        assert awaiting.human_review == review

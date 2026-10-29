@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from incidentflow.domain.human_review.models import HumanReviewRecommendation
+from incidentflow.domain.human_review.models import HumanReview
 
 
 class InvestigationEvidence(BaseModel):
@@ -142,10 +142,10 @@ class InvestigationReport(BaseModel):
         default_factory=list,
         description="Recommendations only; no action is executed by this report.",
     )
-    review_recommendation: HumanReviewRecommendation | None = Field(
+    human_review: HumanReview | None = Field(
         default=None,
         description=(
-            "Optional structured request for application-controlled human review; "
+            "Optional structured request for a human review; "
             "it never authorizes an action by itself."
         ),
     )

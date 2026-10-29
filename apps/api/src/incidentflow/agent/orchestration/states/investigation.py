@@ -4,8 +4,8 @@ from typing import TypedDict
 
 from incidentflow.agent.agents_specialist.contracts import InvestigationReport
 from incidentflow.domain.human_review.models import (
+    HumanReview,
     HumanReviewDecision,
-    HumanReviewRequest,
 )
 
 
@@ -23,9 +23,8 @@ class InvestigationWorkflowOutput(TypedDict):
     workflow_stage: str
     report: InvestigationReport | None
     errors: list[str]
-    pending_human_review: HumanReviewRequest | None
+    human_review: HumanReview | None
     human_review_decision: HumanReviewDecision | None
-    action_result: dict[str, object] | None
 
 
 class InvestigationWorkflowState(InvestigationWorkflowInput, InvestigationWorkflowOutput):
