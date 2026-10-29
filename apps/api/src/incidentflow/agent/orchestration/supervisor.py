@@ -1,3 +1,5 @@
+from typing import Any
+
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
     AgentMiddleware,
@@ -27,7 +29,9 @@ TOOL_SELECTION_SYSTEM_PROMPT = (
 )
 
 
-def build_supervisor_middleware(model: BaseChatModel | str | None = None) -> list[AgentMiddleware]:
+def build_supervisor_middleware(
+    model: BaseChatModel | str | None = None,
+) -> list[AgentMiddleware[Any, Any, Any]]:
     """Allow bounded specialist selection and retry only idempotent read delegations."""
     return [
         LLMToolSelectorMiddleware(

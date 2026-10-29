@@ -89,7 +89,9 @@ class GitHubRepositoryAllowlistMiddleware(AgentMiddleware):
         return await handler(request)
 
 
-def build_github_middleware(allowed_repositories: tuple[str, ...]) -> list[AgentMiddleware]:
+def build_github_middleware(
+    allowed_repositories: tuple[str, ...],
+) -> list[AgentMiddleware[Any, Any, Any]]:
     """Bound GitHub reads and model turns so an investigation cannot loop."""
     return [
         *build_shared_middleware(),

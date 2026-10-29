@@ -1,3 +1,5 @@
+from typing import Any
+
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
     AgentMiddleware,
@@ -15,7 +17,7 @@ from incidentflow.agent.prompts.data_intelligence import DATA_INTELLIGENCE_SYSTE
 from incidentflow.core.config import get_settings
 
 
-def build_data_intelligence_middleware() -> list[AgentMiddleware]:
+def build_data_intelligence_middleware() -> list[AgentMiddleware[Any, Any, Any]]:
     """Guard the MongoDB investigation against redundant external queries."""
     return [
         *build_shared_middleware(),

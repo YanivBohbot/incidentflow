@@ -36,7 +36,7 @@ class ExternalEvidenceBoundaryMiddleware(AgentMiddleware):
         return wrap_external_evidence_tool_message(request.tool_call["name"], result)
 
 
-def build_shared_middleware() -> list[AgentMiddleware]:
+def build_shared_middleware() -> list[AgentMiddleware[Any, Any, Any]]:
     """Return shared middleware enabled for every specialist agent.
 
     The external-evidence boundary applies to every specialist tool result.
