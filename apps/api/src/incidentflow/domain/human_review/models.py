@@ -1,6 +1,7 @@
 """JSON-safe contracts for conditional human review in an investigation."""
 
 from enum import Enum
+from typing import Any
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -29,7 +30,9 @@ class HumanReview(BaseModel):
     review_type: HumanReviewType
     reason: str = Field(min_length=1, max_length=2_000)
     evidence_references: list[str] = Field(default_factory=list, max_length=50)
-    draft: dict[str, str] = Field(default_factory=dict)
+    draft: dict[str, Any] = Field(default_factory=dict)
+
+
 class HumanReviewDecision(BaseModel):
     """The explicit JSON-safe response supplied by an authenticated operator."""
 

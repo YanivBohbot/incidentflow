@@ -10,7 +10,6 @@ from incidentflow.domain.incidents.models import (
     utc_now,
 )
 from incidentflow.domain.investigations.models import InvestigationLifecycle
-from incidentflow.domain.jira.models import JiraProposalAction, JiraProposalState
 from incidentflow.domain.memory.models import IncidentLessonState
 from incidentflow.infrastructure.database.base import Base
 
@@ -77,42 +76,6 @@ class InvestigationORM(Base):
     report_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     pending_human_review_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=utc_now
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
-    )
-
-
-class JiraActionProposalORM(Base):
-    __tablename__ = "jira_action_proposals"
-
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    investigation_id: Mapped[UUID] = mapped_column(
-        ForeignKey("investigations.id"), nullable=False, index=True
-    )
-    action: Mapped[JiraProposalAction] = mapped_column(
-        Enum(JiraProposalAction, name="jira_proposal_action"), nullable=False
-    )
-    state: Mapped[JiraProposalState] = mapped_column(
-        Enum(JiraProposalState, name="jira_proposal_state"),
-        nullable=False,
-        default=JiraProposalState.PENDING,
-    )
-    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
-    result_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    approved_by: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    rejected_by: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    cancelled_by: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    proposed_by: Mapped[str] = mapped_column(String(200), nullable=False, default="local-operator")
-    decision_history: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
     )

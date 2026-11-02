@@ -2,6 +2,7 @@ import os
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,7 +13,7 @@ class Settings(BaseSettings):
     auth_enabled: bool = False
     keycloak_issuer_url: str = "http://localhost:8080/realms/incidentflow"
     keycloak_audience: str = "incidentflow-api"
-    openai_api_key: str
+    openai_api_key: SecretStr
     openai_model: str = "gpt-4.1-mini"
     openai_timeout_seconds: float = 60
     langsmith_tracing: bool = False
@@ -34,6 +35,17 @@ class Settings(BaseSettings):
     github_mcp_enabled: bool = False
     github_mcp_repositories: str = ""
     github_personal_access_token: str | None = None
+    cloudwatch_mcp_enabled: bool = False
+    cloudwatch_mcp_command: str = "uv"
+    cloudwatch_mcp_command_args: str = "tool,run,--from,awslabs.cloudwatch-mcp-server@0.3.1," + (
+        "awslabs.cloudwatch-mcp-server.exe" if os.name == "nt" else "awslabs.cloudwatch-mcp-server"
+    )
+    # Leave the profile empty in AWS deployments so the server uses the attached IAM role.
+    cloudwatch_mcp_aws_profile: str | None = None
+    cloudwatch_mcp_aws_region: str = "us-east-1"
+    cloudwatch_mcp_timeout_seconds: float = 90
+    cloudwatch_mcp_log_groups: str = ""
+    cloudwatch_mcp_lookback_minutes: int = 60
     mongodb_mcp_url: str = "http://127.0.0.1:3000/mcp"
     mongodb_mcp_enabled: bool = False
     mongodb_mcp_connection_string: str = "mongodb://127.0.0.1:27017/?directConnection=true"
@@ -88,6 +100,24 @@ class Settings(BaseSettings):
         if self.github_mcp_transport == "http":
             return bool(self.github_mcp_url)
         return bool(self.github_mcp_command and self.github_mcp_stdio_arguments)
+
+    @property
+    def cloudwatch_mcp_allowed_log_groups(self) -> tuple[str, ...]:
+        """Return the comma-separated log groups the CloudWatch agent may query."""
+        return tuple(
+            log_group.strip()
+            for log_group in self.cloudwatch_mcp_log_groups.split(",")
+            if log_group.strip()
+        )
+
+    @property
+    def cloudwatch_mcp_stdio_arguments(self) -> tuple[str, ...]:
+        """Return the comma-separated CloudWatch MCP command arguments."""
+        return tuple(
+            argument.strip()
+            for argument in self.cloudwatch_mcp_command_args.split(",")
+            if argument.strip()
+        )
 
 
 @lru_cache

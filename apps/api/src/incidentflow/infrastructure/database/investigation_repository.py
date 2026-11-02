@@ -106,7 +106,7 @@ class InvestigationRepository:
     def mark_awaiting_human_review(
         self,
         investigation_id: UUID,
-        report: InvestigationReport,
+        report: InvestigationReport | None,
         review: HumanReview,
     ) -> Investigation | None:
         """Persist the report and review payload before the graph waits for an operator."""
@@ -115,7 +115,7 @@ class InvestigationRepository:
             return None
 
         orm.lifecycle = InvestigationLifecycle.AWAITING_HUMAN_REVIEW
-        orm.report_payload = report.model_dump(mode="json")
+        orm.report_payload = report.model_dump(mode="json") if report is not None else None
         orm.pending_human_review_payload = review.model_dump(mode="json")
         orm.error_message = None
         self.session.commit()

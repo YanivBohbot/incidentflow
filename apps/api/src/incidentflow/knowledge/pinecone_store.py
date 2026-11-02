@@ -76,7 +76,7 @@ class PineconeKnowledgeStore:
         index = client.Index(settings.pinecone_index_name)
         embeddings = OpenAIEmbeddings(
             model=settings.pinecone_embedding_model,
-            api_key=settings.openai_api_key,
+            api_key=settings.openai_api_key.get_secret_value(),
         )
         vector_stores = {
             namespace: PineconeVectorStore(
