@@ -1,0 +1,7 @@
+# Opt-in AWS credentials for the CloudWatch agent in the local Docker stack:
+#   docker compose -f docker-compose.yml -f docker-compose.cloudwatch.yml up --build -d
+# Set AWS_CONFIG_DIR in the root .env to the host directory that holds config and credentials.
+services:
+  api:
+    volumes:
+      - ${AWS_CONFIG_DIR:?Set AWS_CONFIG_DIR to the host ~/.aws directory}:/home/incidentflow/.aws:ro

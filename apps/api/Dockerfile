@@ -6,6 +6,12 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 
 WORKDIR /build
 
+# The AWS Labs CloudWatch MCP server pins its own mcp, pydantic, and boto3 versions, so it gets
+# an isolated virtual environment instead of the API's site-packages. Installing it at build time
+# avoids a PyPI download inside each investigation's timeout.
+RUN python -m venv /opt/cloudwatch-mcp \
+    && /opt/cloudwatch-mcp/bin/pip install awslabs.cloudwatch-mcp-server==0.3.1
+
 # Install application dependencies before copying migration files to keep the
 # dependency layer reusable across source-only changes.
 COPY pyproject.toml ./
@@ -23,6 +29,7 @@ RUN groupadd --gid 10001 incidentflow \
 WORKDIR /app
 
 COPY --from=builder /install /usr/local
+COPY --from=builder /opt/cloudwatch-mcp /opt/cloudwatch-mcp
 COPY --chown=incidentflow:incidentflow alembic.ini ./
 COPY --chown=incidentflow:incidentflow alembic ./alembic
 

@@ -40,8 +40,15 @@ services:
       - ./apps/api/.env
     environment:
       DATABASE_URL: postgresql+psycopg://incidentflow:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/incidentflow_db
+      # Reuse the encrypted OAuth cache created by the local Jira MCP authorization flow.
+      MCP_OAUTH_TOKEN_STORE_DIR: /app/.local/oauth-tokens
+      # The image ships the CloudWatch MCP server in its own venv; override host uv settings.
+      CLOUDWATCH_MCP_COMMAND: /opt/cloudwatch-mcp/bin/awslabs.cloudwatch-mcp-server
+      CLOUDWATCH_MCP_COMMAND_ARGS: ""
     ports:
       - "127.0.0.1:8000:8000"
+    volumes:
+      - ./apps/api/.local/oauth-tokens:/app/.local/oauth-tokens
     depends_on:
       migrate:
         condition: service_completed_successfully
