@@ -48,8 +48,13 @@ def search_incident_response_guides(
     settings = get_settings()
     store = PineconeKnowledgeStore.from_settings(settings)
     metadata_filter = {}
-    if document_id:
+    ignored_document_id = None
+    if document_id and not _is_evaluation_reference(document_id):
         metadata_filter["document_id"] = document_id
+    elif document_id:
+        # Evaluation IDs describe an incident scenario, not a Pinecone document.
+        # Ignoring the incorrect filter preserves semantic retrieval by the query.
+        ignored_document_id = document_id
     if source_kind:
         metadata_filter["source_kind"] = source_kind
     matches = store.search(query, metadata_filter=metadata_filter or None)
@@ -58,6 +63,7 @@ def search_incident_response_guides(
             "source_status": "live",
             "query": query,
             "metadata_filter": metadata_filter or None,
+            "ignored_document_id": ignored_document_id,
             "matches": [
                 {
                     "document_id": document.metadata.get("document_id"),
@@ -72,6 +78,11 @@ def search_incident_response_guides(
             ],
         }
     )
+
+
+def _is_evaluation_reference(value: str) -> bool:
+    """Return whether a value identifies an IncidentFlow evaluation scenario, not a source."""
+    return value.upper().startswith("EVAL-")
 
 
 def build_knowledge_tools() -> list[BaseTool]:
