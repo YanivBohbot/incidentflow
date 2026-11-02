@@ -1,4 +1,5 @@
 from langchain.agents import create_agent
+from langchain.agents.middleware import HumanInTheLoopMiddleware
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 
@@ -10,7 +11,7 @@ from incidentflow.core.config import get_settings
 
 
 def build_it_operations_agent(jira_tools: list[BaseTool]):
-    """Build the read-only IT Operations specialist with injected live Jira tools."""
+    """Build the Jira specialist with read tools and approval-gated write tools."""
     settings = get_settings()
 
     model = ChatOpenAI(
@@ -25,6 +26,21 @@ def build_it_operations_agent(jira_tools: list[BaseTool]):
         tools=jira_tools,
         system_prompt=IT_OPERATIONS_SYSTEM_PROMPT,
         name=IT_OPERATIONS_AGENT.technical_name,
-        middleware=build_shared_middleware(),
+        middleware=[
+            HumanInTheLoopMiddleware(
+                interrupt_on={
+                    "createJiraIssue": {
+                        "allowed_decisions": ["approve", "reject"],
+                        "description": "Jira issue creation requires operator approval.",
+                    },
+                    "addOrEditJiraIssueComment": {
+                        "allowed_decisions": ["approve", "reject"],
+                        "description": "Jira comment publication requires operator approval.",
+                    },
+                },
+                description_prefix="Jira write pending approval",
+            ),
+            *build_shared_middleware(),
+        ],
         response_format=ITOperationsFinding,
     )
