@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from incidentflow.application.services.incident_lesson_service import IncidentLessonService
 from incidentflow.application.services.investigation_service import InvestigationService
 from incidentflow.core.config import get_settings
+from incidentflow.domain.human_review.models import HumanReviewDecision
 from incidentflow.domain.investigations.models import Investigation, InvestigationStart
 from incidentflow.domain.memory.models import IncidentLesson, IncidentLessonConfirmation
 from incidentflow.infrastructure.database.incident_lesson_repository import IncidentLessonRepository
@@ -65,11 +66,11 @@ def list_investigations(service: InvestigationServiceDep) -> list[Investigation]
 
 
 @router.post("", response_model=Investigation, status_code=status.HTTP_201_CREATED)
-def start_investigation(
+async def start_investigation(
     data: InvestigationStart, service: InvestigationServiceDep
 ) -> Investigation:
     """Start an investigation for an existing incident and return its final record."""
-    investigation = service.start_investigation(data)
+    investigation = await service.start_investigation(data)
     if investigation is None:
         raise HTTPException(status_code=404, detail="Incident not found")
     return investigation
@@ -81,6 +82,22 @@ def get_investigation(investigation_id: UUID, service: InvestigationServiceDep) 
     investigation = service.get_investigation(investigation_id)
     if investigation is None:
         raise HTTPException(status_code=404, detail="Investigation not found")
+    return investigation
+
+
+@router.post("/{investigation_id}/human-review/resolve", response_model=Investigation)
+async def resolve_human_review(
+    investigation_id: UUID,
+    decision: HumanReviewDecision,
+    service: InvestigationServiceDep,
+) -> Investigation:
+    """Resume one paused investigation with an explicit authenticated-operator decision."""
+    investigation = await service.resume_human_review(investigation_id, decision)
+    if investigation is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Investigation is not awaiting a human review.",
+        )
     return investigation
 
 
