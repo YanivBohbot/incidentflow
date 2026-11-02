@@ -37,3 +37,9 @@ GITHUB_AGENT = AgentIdentity(
     display_name="GitHub Agent",
     responsibility="Examines relevant recent commits and pull requests without modifying GitHub.",
 )
+
+CLOUDWATCH_OBSERVABILITY_AGENT = AgentIdentity(
+    technical_name="cloudwatch_observability_agent",
+    display_name="CloudWatch Observability Agent",
+    responsibility="Reads CloudWatch alarms, metrics, and logs without modifying AWS.",
+)

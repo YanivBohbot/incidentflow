@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from cryptography.fernet import Fernet
 from fastmcp import Client
@@ -12,7 +13,7 @@ from fastmcp.client.auth import OAuth
 from key_value.aio.stores.disk import DiskStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from langchain.mcp import MCPAdapter
-from langchain_core.tools import BaseTool
+from langchain_core.tools import BaseTool, StructuredTool
 
 JIRA_READ_TOOL_NAMES = (
     "getAccessibleAtlassianResources",
@@ -25,6 +26,7 @@ JIRA_WRITE_TOOL_NAMES = (
     "createJiraIssue",
     "addOrEditJiraIssueComment",
 )
+JIRA_OPTIONAL_WRITE_FIELDS = frozenset({"assignee", "parent", "assignToSprint"})
 JIRA_TOOL_DESCRIPTIONS = {
     "getAccessibleAtlassianResources": "List the accessible Atlassian cloud resources.",
     "listJiraProjects": "List the Jira projects available in one cloud resource.",
@@ -127,7 +129,9 @@ def select_ticket_tools(tools: Sequence[BaseTool]) -> JiraMCPToolSet:
 
     return JiraMCPToolSet(
         read_tools=read_tool_set.read_tools,
-        write_tools=[_approve_tool(tools_by_name[name]) for name in JIRA_WRITE_TOOL_NAMES],
+        write_tools=[
+            _prepare_ticket_write_tool(tools_by_name[name]) for name in JIRA_WRITE_TOOL_NAMES
+        ],
     )
 
 
@@ -138,8 +142,34 @@ def _approve_tool(tool: BaseTool) -> BaseTool:
     return tool
 
 
+def _prepare_ticket_write_tool(tool: BaseTool) -> BaseTool:
+    """Wrap one approved Jira write so blank optional values never reach Jira."""
+    approved_tool = _approve_tool(tool)
+
+    async def invoke_ticket_write(**arguments: Any) -> Any:
+        """Forward the approved arguments after removing empty optional fields."""
+        sanitized_arguments = _without_empty_optional_jira_fields(arguments)
+        return await approved_tool.ainvoke(sanitized_arguments)
+
+    return StructuredTool(
+        name=approved_tool.name,
+        description=approved_tool.description,
+        args_schema=approved_tool.args_schema,
+        coroutine=invoke_ticket_write,
+    )
+
+
+def _without_empty_optional_jira_fields(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Omit optional Jira fields when strict tool calling supplied an empty string."""
+    return {
+        name: value
+        for name, value in arguments.items()
+        if name not in JIRA_OPTIONAL_WRITE_FIELDS or value != ""
+    }
+
+
 def _openai_compatible_schema(schema: object) -> object:
-    """Drop optional MCP inputs containing array items OpenAI cannot validate."""
+    """Drop MCP inputs that cannot satisfy OpenAI strict tool-schema rules."""
     if isinstance(schema, dict):
         normalized = deepcopy(schema)
     elif isinstance(schema, type) and hasattr(schema, "model_json_schema"):
@@ -148,16 +178,17 @@ def _openai_compatible_schema(schema: object) -> object:
         return schema
 
     properties = normalized.get("properties")
-    removed_properties: set[str] = set()
     if isinstance(properties, dict):
         for name, property_schema in tuple(properties.items()):
-            if _contains_untyped_array_items(property_schema):
+            if _contains_untyped_array_items(property_schema) or _contains_open_object(
+                property_schema
+            ):
                 properties.pop(name)
-                removed_properties.add(name)
 
-    required = normalized.get("required")
-    if isinstance(required, list):
-        normalized["required"] = [field for field in required if field not in removed_properties]
+    if isinstance(properties, dict):
+        # OpenAI strict tool schemas require every remaining property and reject
+        # required names whose properties were removed during normalisation.
+        normalized["required"] = list(properties)
     return normalized
 
 
@@ -171,3 +202,14 @@ def _contains_untyped_array_items(schema: object) -> bool:
         return True
 
     return any(_contains_untyped_array_items(value) for value in schema.values())
+
+
+def _contains_open_object(schema: object) -> bool:
+    """Return whether a nested object accepts arbitrary keys, which strict tools forbid."""
+    if not isinstance(schema, dict):
+        return False
+
+    if schema.get("type") == "object" and schema.get("additionalProperties") is not False:
+        return True
+
+    return any(_contains_open_object(value) for value in schema.values())
