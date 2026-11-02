@@ -65,6 +65,14 @@ SUPERVISOR_ROUTING_SCENARIOS = (
         expected_tools=frozenset({"ask_github"}),
     ),
     SupervisorRoutingScenario(
+        name="cloudwatch_only",
+        request=(
+            "Check the CloudWatch alarms, HTTP 5xx metrics, and error logs of payment-service. "
+            "Do not inspect Jira, MongoDB events, documentation, or source-control changes."
+        ),
+        expected_tools=frozenset({"ask_cloudwatch"}),
+    ),
+    SupervisorRoutingScenario(
         name="full_investigation",
         request=(
             "Investigate Jira incident INC-204 end to end: read its ticket context, inspect the "

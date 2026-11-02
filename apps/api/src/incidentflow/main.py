@@ -1,26 +1,25 @@
 from collections.abc import AsyncIterator, Callable
-from contextlib import AbstractContextManager, asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from time import perf_counter
 from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
 
-from incidentflow.agent.orchestration.checkpoints import open_postgres_checkpointer
+from incidentflow.agent.orchestration.checkpoints.postgres import open_postgres_checkpointer
 from incidentflow.agent.orchestration.investigation_workflow import build_investigation_workflow
-from incidentflow.agent.orchestration.jira_action_workflow import build_jira_action_workflow
+from incidentflow.agent.orchestration.supervisor import build_investigation_supervisor
 from incidentflow.api.routes.incidents import (
     router as incidents_router,
 )
 from incidentflow.api.routes.investigations import router as investigations_router
-from incidentflow.api.routes.jira import router as jira_router
 from incidentflow.core.config import get_settings
 from incidentflow.core.operational_metrics import OperationalMetrics
 
 
 def create_app(
     *,
-    checkpointer_context_factory: Callable[[str], AbstractContextManager[Any]] = (
+    checkpointer_context_factory: Callable[[str], AbstractAsyncContextManager[Any]] = (
         open_postgres_checkpointer
     ),
 ) -> FastAPI:
@@ -29,12 +28,11 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        with checkpointer_context_factory(settings.checkpoint_database_url) as checkpointer:
-            checkpointer.setup()
+        async with checkpointer_context_factory(settings.checkpoint_database_url) as checkpointer:
+            await checkpointer.setup()
+            supervisor = build_investigation_supervisor()
             app.state.investigation_workflow = build_investigation_workflow(
-                checkpointer=checkpointer
-            )
-            app.state.jira_action_workflow = build_jira_action_workflow(
+                supervisor,
                 checkpointer=checkpointer
             )
             yield
@@ -84,8 +82,6 @@ def create_app(
         prefix=settings.api_prefix,
     )
     app.include_router(investigations_router, prefix=settings.api_prefix)
-    app.include_router(jira_router, prefix=settings.api_prefix)
-
     return app
 
 
