@@ -1,3 +1,5 @@
+"""Asynchronous PostgreSQL checkpoint persistence for LangGraph workflows."""
+
 from typing import Any
 
 
@@ -11,12 +13,12 @@ def normalize_checkpoint_database_url(database_url: str) -> str:
 
 
 def _open_postgres_saver(database_url: str) -> Any:
-    """Open LangGraph's synchronous PostgreSQL saver context on demand."""
-    from langgraph.checkpoint.postgres import PostgresSaver
+    """Open LangGraph's asynchronous PostgreSQL saver context on demand."""
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-    return PostgresSaver.from_conn_string(database_url)
+    return AsyncPostgresSaver.from_conn_string(database_url)
 
 
 def open_postgres_checkpointer(database_url: str) -> Any:
-    """Return a saver context using the normalized PostgreSQL connection URL."""
+    """Return an async saver context using the normalized PostgreSQL connection URL."""
     return _open_postgres_saver(normalize_checkpoint_database_url(database_url))
