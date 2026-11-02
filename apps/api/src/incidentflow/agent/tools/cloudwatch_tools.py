@@ -168,7 +168,7 @@ async def _read_error_logs(
             },
         )
         lines = len(logs["results"])
-    except Exception as error: 
+    except Exception as error:  # noqa: BLE001 - keep the evidence already read.
         evidence.fail("execute_log_insights_query", error)
         return
     evidence.add(f"logs:{','.join(log_groups)}", logs, lines)
