@@ -1,0 +1,4 @@
+email:
+  provider_rate_limit_per_second: 50
+  # Marketing campaigns now share the transactional sending pool.
+  shared_pool_with_marketing: true
