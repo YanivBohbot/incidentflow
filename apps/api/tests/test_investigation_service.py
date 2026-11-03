@@ -1,10 +1,16 @@
 from uuid import uuid4
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from incidentflow.agent.agents_specialist.contracts import InvestigationReport
+from incidentflow.agent.findings import InvestigationReport
 from incidentflow.application.services.investigation_service import InvestigationService
+from incidentflow.domain.human_review.models import (
+    HumanReview,
+    HumanReviewDecision,
+    HumanReviewType,
+)
 from incidentflow.domain.incidents.models import IncidentPriority
 from incidentflow.domain.investigations.models import (
     InvestigationCreate,
@@ -22,7 +28,7 @@ class CompletedWorkflow:
     def __init__(self, report: InvestigationReport) -> None:
         self.report = report
 
-    def invoke(self, payload: dict, config: dict) -> dict:
+    async def ainvoke(self, payload: dict, config: dict) -> dict:
         assert payload["incident_request"] == "Investigate Payment API HTTP 500 errors."
         assert config["configurable"]["thread_id"].startswith("investigation:")
         return {
@@ -33,7 +39,7 @@ class CompletedWorkflow:
 
 
 class FailedWorkflow:
-    def invoke(self, payload: dict, config: dict) -> dict:
+    async def ainvoke(self, payload: dict, config: dict) -> dict:
         return {
             "investigation_lifecycle": "failed",
             "report": None,
@@ -42,8 +48,32 @@ class FailedWorkflow:
 
 
 class ThrowingWorkflow:
-    def invoke(self, payload: dict, config: dict) -> dict:
+    async def ainvoke(self, payload: dict, config: dict) -> dict:
         raise RuntimeError("Specialist integration became unavailable.")
+
+
+class PausingThenCompletingWorkflow:
+    """Simulate one interruption and verify that the same graph thread resumes."""
+
+    def __init__(self, report: InvestigationReport, review: HumanReview) -> None:
+        self.report = report
+        self.review = review
+        self.thread_ids: list[str] = []
+
+    async def ainvoke(self, payload: object, config: dict) -> dict:
+        self.thread_ids.append(config["configurable"]["thread_id"])
+        if len(self.thread_ids) == 1:
+            return {
+                "__interrupt__": [object()],
+                "report": self.report,
+                "human_review": self.review,
+                "errors": [],
+            }
+        return {
+            "investigation_lifecycle": "completed",
+            "report": self.report,
+            "errors": [],
+        }
 
 
 def create_incident(session: Session) -> IncidentORM:
@@ -58,7 +88,8 @@ def create_incident(session: Session) -> IncidentORM:
     return incident
 
 
-def test_service_persists_a_completed_workflow_report() -> None:
+@pytest.mark.anyio
+async def test_service_persists_a_completed_workflow_report() -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
 
@@ -79,7 +110,7 @@ def test_service_persists_a_completed_workflow_report() -> None:
             CompletedWorkflow(report),
         )
 
-        investigation = service.run_investigation(
+        investigation = await service.run_investigation(
             InvestigationCreate(
                 incident_id=incident.id,
                 incident_request="Investigate Payment API HTTP 500 errors.",
@@ -91,7 +122,8 @@ def test_service_persists_a_completed_workflow_report() -> None:
         assert investigation.report == report
 
 
-def test_service_persists_a_failed_workflow() -> None:
+@pytest.mark.anyio
+async def test_service_persists_a_failed_workflow() -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
 
@@ -103,7 +135,7 @@ def test_service_persists_a_failed_workflow() -> None:
             FailedWorkflow(),
         )
 
-        investigation = service.run_investigation(
+        investigation = await service.run_investigation(
             InvestigationCreate(
                 incident_id=incident.id,
                 incident_request="Investigate Payment API HTTP 500 errors.",
@@ -115,7 +147,8 @@ def test_service_persists_a_failed_workflow() -> None:
         assert investigation.error_message == "incident_request must not be empty."
 
 
-def test_service_returns_a_persisted_failure_when_workflow_raises() -> None:
+@pytest.mark.anyio
+async def test_service_returns_a_persisted_failure_when_workflow_raises() -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
 
@@ -127,7 +160,7 @@ def test_service_returns_a_persisted_failure_when_workflow_raises() -> None:
             ThrowingWorkflow(),
         )
 
-        investigation = service.run_investigation(
+        investigation = await service.run_investigation(
             InvestigationCreate(
                 incident_id=incident.id,
                 incident_request="Investigate Payment API HTTP 500 errors.",
@@ -137,3 +170,45 @@ def test_service_returns_a_persisted_failure_when_workflow_raises() -> None:
 
         assert investigation.lifecycle == InvestigationLifecycle.FAILED
         assert investigation.error_message == "Workflow execution failed before a report was produced."
+
+
+@pytest.mark.anyio
+async def test_service_persists_pause_and_resumes_the_same_workflow_thread() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        incident = create_incident(session)
+        report = InvestigationReport(summary="A human decision is required.", confidence=0.8)
+        review = HumanReview(
+            review_type=HumanReviewType.JIRA_WRITE,
+            reason="A Jira issue would communicate the confirmed impact.",
+            evidence_references=["mongodb:event-17"],
+            draft={"summary": "Payment API incident"},
+        )
+        workflow = PausingThenCompletingWorkflow(report, review)
+        service = InvestigationService(
+            InvestigationRepository(session),
+            IncidentRepository(session),
+            workflow,
+        )
+
+        paused = await service.run_investigation(
+            InvestigationCreate(
+                incident_id=incident.id,
+                incident_request="Investigate Payment API HTTP 500 errors.",
+                incident_business_status="OPEN",
+            )
+        )
+
+        assert paused.lifecycle == InvestigationLifecycle.AWAITING_HUMAN_REVIEW
+        assert paused.human_review == review
+
+        completed = await service.resume_human_review(
+            paused.id,
+            HumanReviewDecision(decision="REJECT", actor="on-call-operator"),
+        )
+
+        assert completed is not None
+        assert completed.lifecycle == InvestigationLifecycle.COMPLETED
+        assert workflow.thread_ids == [paused.workflow_thread_id, paused.workflow_thread_id]

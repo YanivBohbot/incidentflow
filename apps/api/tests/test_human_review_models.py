@@ -1,4 +1,4 @@
-from incidentflow.agent.agents_specialist.contracts import InvestigationReport
+from incidentflow.agent.findings import InvestigationReport
 from incidentflow.domain.human_review.models import (
     HumanReview,
     HumanReviewDecision,

@@ -5,7 +5,7 @@ import asyncio
 
 from langchain_openai.chat_models.base import OpenAIAuthenticationError
 
-from incidentflow.agent.agents_specialist.contracts import DataIntelligenceFinding
+from incidentflow.agent.findings import DataIntelligenceFinding
 from incidentflow.agent.identities import DATA_INTELLIGENCE_AGENT
 from incidentflow.agent.tools.data_intelligence_tools import ask_data_intelligence
 from incidentflow.core.config import get_settings

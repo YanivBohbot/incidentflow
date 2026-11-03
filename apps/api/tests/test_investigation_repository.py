@@ -3,7 +3,7 @@ from uuid import uuid4
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from incidentflow.agent.agents_specialist.contracts import InvestigationReport
+from incidentflow.agent.findings import InvestigationReport
 from incidentflow.domain.human_review.models import HumanReview, HumanReviewType
 from incidentflow.domain.incidents.models import IncidentPriority
 from incidentflow.domain.investigations.models import (

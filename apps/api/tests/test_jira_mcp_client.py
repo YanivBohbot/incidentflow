@@ -8,6 +8,7 @@ from incidentflow.agent.mcp_clients.jira import (
     JIRA_WRITE_TOOL_NAMES,
     JiraMCPClient,
     _openai_compatible_schema,
+    _without_empty_optional_jira_fields,
     select_read_tools,
     select_ticket_tools,
 )
@@ -53,6 +54,25 @@ def test_select_ticket_tools_excludes_unapproved_mutations() -> None:
     assert "editJiraIssue" not in [tool.name for tool in selected.write_tools]
 
 
+def test_jira_write_sanitizer_omits_only_blank_optional_fields() -> None:
+    arguments = {
+        "cloudId": "cloud-123",
+        "projectKey": "SAM1",
+        "summary": "Synthetic incident",
+        "assignee": "",
+        "parent": "",
+        "assignToSprint": "",
+        "priority": "Medium",
+    }
+
+    assert _without_empty_optional_jira_fields(arguments) == {
+        "cloudId": "cloud-123",
+        "projectKey": "SAM1",
+        "summary": "Synthetic incident",
+        "priority": "Medium",
+    }
+
+
 def test_schema_removes_mcp_only_arguments_with_untyped_array_items() -> None:
     schema = {
         "type": "object",
@@ -78,6 +98,43 @@ def test_schema_removes_mcp_only_arguments_with_untyped_array_items() -> None:
         "required": ["cloudId", "jql", "expand"],
     }
     assert schema["properties"]["fields"] == {"type": "array", "items": {}}
+
+
+def test_schema_drops_removed_mcp_arguments_from_required_fields() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "cloudId": {"type": "string"},
+            "summary": {"type": "string"},
+            "additional_fields": {"type": "array", "items": {}},
+        },
+        "required": ["cloudId", "summary", "additional_fields"],
+    }
+
+    normalized = _openai_compatible_schema(schema)
+
+    assert normalized["properties"] == {
+        "cloudId": {"type": "string"},
+        "summary": {"type": "string"},
+    }
+    assert normalized["required"] == ["cloudId", "summary"]
+
+
+def test_schema_drops_dynamic_object_arguments_for_openai_strict_tools() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "cloudId": {"type": "string"},
+            "additional_fields": {"type": "object", "additionalProperties": {}},
+        },
+        "required": ["cloudId", "additional_fields"],
+        "additionalProperties": False,
+    }
+
+    normalized = _openai_compatible_schema(schema)
+
+    assert normalized["properties"] == {"cloudId": {"type": "string"}}
+    assert normalized["required"] == ["cloudId"]
 
 
 def test_jira_client_uses_encrypted_persistent_oauth_when_configured(monkeypatch, tmp_path) -> None:

@@ -47,6 +47,13 @@ def ask_github(incident_context: str) -> str:
     return '{"source":"routing-evaluation","specialist":"github"}'
 
 
+@tool
+def ask_cloudwatch(incident_context: str) -> str:
+    """Read AWS CloudWatch alarms, metrics, and application logs for the incident."""
+    TOOL_EXECUTIONS.append("ask_cloudwatch")
+    return '{"source":"routing-evaluation","specialist":"cloudwatch"}'
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -82,7 +89,13 @@ def _build_evaluation_supervisor():
     )
     return create_agent(
         model=model,
-        tools=[ask_it_operations, ask_data_intelligence, ask_knowledge, ask_github],
+        tools=[
+            ask_it_operations,
+            ask_data_intelligence,
+            ask_knowledge,
+            ask_github,
+            ask_cloudwatch,
+        ],
         name="supervisor_routing_evaluation",
         system_prompt=(
             "You are evaluating dynamic specialist routing. Select only the specialist tools "

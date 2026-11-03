@@ -1,7 +1,9 @@
 from langgraph.checkpoint.memory import InMemorySaver
 
-from incidentflow.agent.orchestration import checkpoints
-from incidentflow.agent.orchestration.checkpoints import normalize_checkpoint_database_url
+from incidentflow.agent.orchestration.checkpoints import postgres
+from incidentflow.agent.orchestration.checkpoints.postgres import (
+    normalize_checkpoint_database_url,
+)
 from incidentflow.agent.orchestration.investigation_workflow import (
     build_investigation_workflow,
 )
@@ -15,7 +17,7 @@ def test_database_url_is_normalized_for_postgres_saver() -> None:
 
 
 def test_workflow_compiles_with_injected_checkpointer() -> None:
-    workflow = build_investigation_workflow(checkpointer=InMemorySaver())
+    workflow = build_investigation_workflow(lambda _state: {}, checkpointer=InMemorySaver())
 
     assert workflow is not None
 
@@ -27,9 +29,9 @@ def test_open_postgres_checkpointer_uses_normalized_database_url(monkeypatch) ->
         captured.append(database_url)
         return object()
 
-    monkeypatch.setattr(checkpoints, "_open_postgres_saver", create_fake_saver)
+    monkeypatch.setattr(postgres, "_open_postgres_saver", create_fake_saver)
 
-    checkpointer_context = checkpoints.open_postgres_checkpointer(
+    checkpointer_context = postgres.open_postgres_checkpointer(
         "postgresql+psycopg://user:password@db:5432/incidentflow"
     )
 

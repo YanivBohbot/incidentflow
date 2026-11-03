@@ -11,6 +11,7 @@ def test_routing_scenarios_cover_each_specialist_and_the_full_investigation() ->
     assert scenarios["mongodb_only"].expected_tools == {"ask_data_intelligence"}
     assert scenarios["jira_only"].expected_tools == {"ask_it_operations"}
     assert scenarios["github_only"].expected_tools == {"ask_github"}
+    assert scenarios["cloudwatch_only"].expected_tools == {"ask_cloudwatch"}
     assert scenarios["full_investigation"].expected_tools == {
         "ask_it_operations",
         "ask_data_intelligence",

@@ -77,3 +77,4 @@ def test_connection_id_is_extracted_and_hidden_from_the_model_schema() -> None:
         "properties": {"database": {"type": "string"}},
         "required": ["database"],
     }
+    assert "connectionId" not in schema["properties"]

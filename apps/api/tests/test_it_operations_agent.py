@@ -1,11 +1,11 @@
 from langchain_core.tools import tool
 
-from incidentflow.agent.agents_specialist.contracts import (
-    InvestigationEvidence,
-    ITOperationsFinding,
-)
 from incidentflow.agent.agents_specialist.it_operations import (
     build_it_operations_agent,
+)
+from incidentflow.agent.findings import (
+    InvestigationEvidence,
+    ITOperationsFinding,
 )
 from incidentflow.agent.identities import IT_OPERATIONS_AGENT
 from incidentflow.core.config import get_settings

@@ -36,7 +36,9 @@ async def run(incident: str) -> None:
         result = await agent.ainvoke(
             {"messages": [{"role": "user", "content": incident}]},
             config={
-                "recursion_limit": 6,
+                # Resource discovery, one Jira search, and structured synthesis
+                # need more than the emergency six-step smoke-test budget.
+                "recursion_limit": 10,
                 "configurable": {"thread_id": "it-operations-read-demo"},
             },
         )

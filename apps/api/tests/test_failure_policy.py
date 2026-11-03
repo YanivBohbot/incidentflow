@@ -1,4 +1,6 @@
-from incidentflow.agent.orchestration.failure_policy import classify_node_failure
+from incidentflow.agent.orchestration.fault_tolerance.failure_policy import (
+    classify_node_failure,
+)
 
 
 def test_timeout_becomes_safe_external_source_failure() -> None:

@@ -2,13 +2,18 @@ from collections.abc import Iterator
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import interrupt
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from incidentflow.agent.agents_specialist.contracts import (
+from incidentflow.agent.findings import (
     InvestigationEvidence,
     InvestigationReport,
+)
+from incidentflow.agent.orchestration.investigation_workflow import (
+    build_investigation_workflow,
 )
 from incidentflow.api.routes.incidents import (
     get_incident_service,
@@ -35,7 +40,7 @@ class CompletedWorkflow:
     def __init__(self, report: InvestigationReport) -> None:
         self.report = report
 
-    def invoke(self, payload: dict, config: dict) -> dict:
+    async def ainvoke(self, payload: dict, config: dict) -> dict:
         assert payload["incident_request"] == "Investigate Payment API HTTP 500 errors."
         assert config["configurable"]["thread_id"].startswith("investigation:")
         return {
@@ -43,6 +48,30 @@ class CompletedWorkflow:
             "report": self.report,
             "errors": [],
         }
+
+
+class ApprovalGatedSupervisor:
+    """Act like a Jira specialist that pauses before its write tool can run."""
+
+    def __init__(self, report: InvestigationReport) -> None:
+        self.report = report
+        self.resume_values: list[object] = []
+
+    async def ainvoke(self, _payload: dict, *, config: dict) -> dict:
+        assert config["configurable"]["thread_id"].startswith("investigation:")
+        decision = interrupt(
+            {
+                "action_requests": [
+                    {
+                        "name": "createJiraIssue",
+                        "arguments": {"summary": "Payment API errors"},
+                        "description": "Jira issue creation requires operator approval.",
+                    }
+                ]
+            }
+        )
+        self.resume_values.append(decision)
+        return {"structured_response": self.report}
 
 
 def test_incident_investigation_and_persisted_report_round_trip() -> None:
@@ -115,3 +144,65 @@ def test_incident_investigation_and_persisted_report_round_trip() -> None:
         persisted_response = client.get(f"/api/investigations/{created['id']}")
         assert persisted_response.status_code == 200
         assert persisted_response.json()["report"] == created["report"]
+
+
+def test_api_resumes_a_manual_supervisor_call_after_jira_hitl() -> None:
+    """Exercise HTTP, database, workflow, manual Supervisor call, interrupt, and resume."""
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    supervisor = ApprovalGatedSupervisor(
+        InvestigationReport(summary="A Jira issue was considered after the review.", confidence=0.8)
+    )
+    workflow = build_investigation_workflow(supervisor, checkpointer=InMemorySaver())
+
+    def incident_service() -> Iterator[IncidentService]:
+        with session_factory() as session:
+            yield IncidentService(IncidentRepository(session))
+
+    def investigation_service() -> Iterator[InvestigationService]:
+        with session_factory() as session:
+            yield InvestigationService(
+                InvestigationRepository(session), IncidentRepository(session), workflow
+            )
+
+    app = FastAPI()
+    app.include_router(incidents_router, prefix="/api")
+    app.include_router(investigations_router, prefix="/api")
+    app.dependency_overrides[get_incident_service] = incident_service
+    app.dependency_overrides[get_investigation_service] = investigation_service
+
+    with TestClient(app) as client:
+        incident_response = client.post(
+            "/api/incidents",
+            json={
+                "title": "Payment API failures",
+                "description": "Payment API returned HTTP 500 responses.",
+                "priority": "HIGH",
+            },
+        )
+        investigation_response = client.post(
+            "/api/investigations",
+            json={
+                "incident_id": incident_response.json()["id"],
+                "incident_request": "Investigate Payment API HTTP 500 errors.",
+            },
+        )
+        assert investigation_response.status_code == 201
+        paused = investigation_response.json()
+        assert paused["lifecycle"] == "AWAITING_HUMAN_REVIEW"
+        assert paused["human_review"]["review_type"] == "JIRA_WRITE"
+        assert paused["human_review"]["draft"]["tool_name"] == "createJiraIssue"
+
+        resumed_response = client.post(
+            f"/api/investigations/{paused['id']}/human-review/resolve",
+            json={"decision": "APPROVE", "actor": "test-operator"},
+        )
+        assert resumed_response.status_code == 200
+        assert resumed_response.json()["lifecycle"] == "COMPLETED"
+
+    assert supervisor.resume_values == [{"decisions": [{"type": "approve"}]}]

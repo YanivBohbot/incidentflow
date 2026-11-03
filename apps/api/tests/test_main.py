@@ -23,7 +23,8 @@ def test_health_returns_ok(monkeypatch) -> None:
     assert response.json() == {"status": "ok"}
 
 
-def test_app_lifespan_opens_checkpointer_and_shares_workflow(monkeypatch) -> None:
+@pytest.mark.anyio
+async def test_app_lifespan_opens_checkpointer_and_shares_workflow(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv(
         "DATABASE_URL",
@@ -35,28 +36,33 @@ def test_app_lifespan_opens_checkpointer_and_shares_workflow(monkeypatch) -> Non
     events: list[str] = []
 
     class FakeCheckpointerContext:
-        def __enter__(self):
+        async def __aenter__(self):
             events.append("open")
             return self
 
-        def __exit__(self, *_args):
+        async def __aexit__(self, *_args):
             events.append("close")
 
-        def setup(self) -> None:
+        async def setup(self) -> None:
             events.append("setup")
 
-    monkeypatch.setattr(main, "build_investigation_workflow", lambda *, checkpointer: checkpointer)
-    monkeypatch.setattr(main, "build_jira_action_workflow", lambda *, checkpointer: checkpointer)
+    monkeypatch.setattr(
+        main, "build_investigation_workflow", lambda _supervisor, *, checkpointer: checkpointer
+    )
+    monkeypatch.setattr(main, "build_investigation_supervisor", lambda: object())
 
-    app = main.create_app(checkpointer_context_factory=lambda _database_url: FakeCheckpointerContext())
+    def fake_recovery() -> int:
+        events.append("recover")
+        return 0
+
+    app = main.create_app(
+        checkpointer_context_factory=lambda _database_url: FakeCheckpointerContext(),
+        recover_interrupted_investigations=fake_recovery,
+    )
     lifespan = app.router.lifespan_context(app)
 
-    with pytest.raises(StopIteration):
-        lifespan.__aenter__().send(None)
-    assert app.state.investigation_workflow is not None
-    assert app.state.jira_action_workflow is not None
+    async with lifespan:
+        assert app.state.investigation_workflow is not None
 
-    with pytest.raises(StopIteration):
-        lifespan.__aexit__(None, None, None).send(None)
-
-    assert events == ["open", "setup", "close"]
+    # Interrupted runs are cleaned up before the workflow accepts new investigations.
+    assert events == ["recover", "open", "setup", "close"]
