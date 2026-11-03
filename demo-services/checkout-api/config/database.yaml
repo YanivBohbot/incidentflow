@@ -1,0 +1,5 @@
+database:
+  # 20 connections per pod x 12 pods = 240 > 200 allowed by the database.
+  pool_size_per_pod: 20
+autoscaling:
+  max_pods: 12   # raised from 8 for the flash sale
