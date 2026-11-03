@@ -9,7 +9,11 @@ from incidentflow.application.services.incident_lesson_service import IncidentLe
 from incidentflow.application.services.investigation_service import InvestigationService
 from incidentflow.core.config import get_settings
 from incidentflow.domain.human_review.models import HumanReviewDecision
-from incidentflow.domain.investigations.models import Investigation, InvestigationStart
+from incidentflow.domain.investigations.models import (
+    Investigation,
+    InvestigationStart,
+    InvestigationTraceStep,
+)
 from incidentflow.domain.memory.models import IncidentLesson, IncidentLessonConfirmation
 from incidentflow.infrastructure.database.incident_lesson_repository import IncidentLessonRepository
 from incidentflow.infrastructure.database.incident_repository import IncidentRepository
@@ -85,6 +89,17 @@ def get_investigation(investigation_id: UUID, service: InvestigationServiceDep) 
     return investigation
 
 
+@router.get("/{investigation_id}/trace", response_model=list[InvestigationTraceStep])
+async def get_investigation_trace(
+    investigation_id: UUID, service: InvestigationServiceDep
+) -> list[InvestigationTraceStep]:
+    """Return the readable multi-agent timeline: delegations, findings, reviews, report."""
+    trace = await service.get_investigation_trace(investigation_id)
+    if trace is None:
+        raise HTTPException(status_code=404, detail="Investigation not found")
+    return trace
+
+
 @router.post("/{investigation_id}/human-review/resolve", response_model=Investigation)
 async def resolve_human_review(
     investigation_id: UUID,
@@ -92,7 +107,12 @@ async def resolve_human_review(
     service: InvestigationServiceDep,
 ) -> Investigation:
     """Resume one paused investigation with an explicit authenticated-operator decision."""
-    investigation = await service.resume_human_review(investigation_id, decision)
+    try:
+        investigation = await service.resume_human_review(investigation_id, decision)
+    except ValueError as error:  # an edit outside the permitted Jira fields
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
+        ) from error
     if investigation is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

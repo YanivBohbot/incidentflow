@@ -3,7 +3,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from incidentflow.agent.agents_specialist.contracts import InvestigationReport
+from incidentflow.agent.findings import InvestigationReport
 from incidentflow.domain.human_review.models import HumanReview
 from incidentflow.domain.investigations.models import (
     Investigation,
@@ -121,6 +121,19 @@ class InvestigationRepository:
         self.session.commit()
         self.session.refresh(orm)
         return self.to_domain(orm)
+
+    def fail_running_investigations(self, error_message: str) -> int:
+        """Mark every RUNNING investigation as FAILED and return how many changed."""
+        statement = select(InvestigationORM).where(
+            InvestigationORM.lifecycle == InvestigationLifecycle.RUNNING
+        )
+        running = list(self.session.scalars(statement).all())
+        for orm in running:
+            orm.lifecycle = InvestigationLifecycle.FAILED
+            orm.pending_human_review_payload = None
+            orm.error_message = error_message
+        self.session.commit()
+        return len(running)
 
     def fail_investigation(
         self, investigation_id: UUID, error_message: str

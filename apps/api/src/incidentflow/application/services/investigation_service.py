@@ -8,6 +8,7 @@ from incidentflow.agent.orchestration.policies.human_review import (
     jira_tool_resume_payload,
     jira_write_review_from_interrupt,
 )
+from incidentflow.agent.orchestration.trace import build_investigation_trace
 from incidentflow.core.operational_metrics import OperationalMetrics
 from incidentflow.domain.human_review.models import HumanReviewDecision, HumanReviewType
 from incidentflow.domain.investigations.models import (
@@ -15,6 +16,7 @@ from incidentflow.domain.investigations.models import (
     InvestigationCreate,
     InvestigationLifecycle,
     InvestigationStart,
+    InvestigationTraceStep,
 )
 from incidentflow.infrastructure.database.incident_repository import IncidentRepository
 from incidentflow.infrastructure.database.investigation_repository import (
@@ -90,15 +92,24 @@ class InvestigationService:
         investigation = self.repository.get_investigation(investigation_id)
         if investigation is None or investigation.lifecycle is not InvestigationLifecycle.AWAITING_HUMAN_REVIEW:
             return None
+        resume_payload = decision.model_dump(mode="json")
+        if (
+            investigation.human_review
+            and investigation.human_review.review_type is HumanReviewType.JIRA_WRITE
+        ):
+            # Raises HumanReviewEditError before the graph resumes, so a rejected edit
+            # leaves the investigation paused and the operator can correct it.
+            resume_payload = jira_tool_resume_payload(decision, investigation.human_review)
         try:
-            resume_payload = decision.model_dump(mode="json")
-            if (
-                investigation.human_review
-                and investigation.human_review.review_type is HumanReviewType.JIRA_WRITE
-            ):
-                resume_payload = jira_tool_resume_payload(decision)
+            # Record the pause and the decision in the graph state so the trace can show them.
+            review_event = {
+                "review": investigation.human_review.model_dump(mode="json")
+                if investigation.human_review
+                else None,
+                "decision": decision.model_dump(mode="json"),
+            }
             result = await self.workflow.ainvoke(
-                Command(resume=resume_payload),
+                Command(resume=resume_payload, update={"review_events": [review_event]}),
                 config={"configurable": {"thread_id": investigation.workflow_thread_id}},
             )
         except Exception:
@@ -112,6 +123,53 @@ class InvestigationService:
             self._record_lifecycle(failed.lifecycle.value)
             return failed
         return self._persist_workflow_result(investigation, result)
+
+    async def get_investigation_trace(
+        self, investigation_id: UUID
+    ) -> list[InvestigationTraceStep] | None:
+        """Rebuild the agent timeline from the durable LangGraph checkpoint."""
+        investigation = self.repository.get_investigation(investigation_id)
+        if investigation is None:
+            return None
+        config = {"configurable": {"thread_id": investigation.workflow_thread_id}}
+        snapshot = await self.workflow.aget_state(config)
+        values = dict(snapshot.values or {})
+        # While the supervisor runs or a Jira write is paused, the investigate node has not
+        # returned: the supervisor's messages so far live in its own subgraph checkpoint.
+        supervisor_messages, subagent_runs = await self._latest_agent_messages(config)
+        if len(supervisor_messages) > len(values.get("messages", [])):
+            values["messages"] = supervisor_messages
+        pending = (
+            investigation.human_review
+            if investigation.lifecycle is InvestigationLifecycle.AWAITING_HUMAN_REVIEW
+            else None
+        )
+        return build_investigation_trace(values, pending, subagent_runs)
+
+    async def _latest_agent_messages(self, config: dict) -> tuple[list[Any], list[list[Any]]]:
+        """Read the newest checkpoint of the supervisor and of each specialist agent.
+
+        The supervisor runs under "investigate:<task>". Each specialist create_agent runs
+        inside a supervisor tool, one level deeper: "investigate:<task>|tools:<task>".
+        """
+        checkpointer = getattr(self.workflow, "checkpointer", None)
+        if checkpointer is None or not hasattr(checkpointer, "alist"):
+            return [], []
+        latest: dict[str, Any] = {}
+        async for checkpoint in checkpointer.alist(config):  # newest first
+            namespace = checkpoint.config["configurable"].get("checkpoint_ns", "")
+            if namespace.startswith("investigate:") and namespace not in latest:
+                latest[namespace] = checkpoint
+        supervisor: list[Any] = []
+        runs: list[tuple[str, list[Any]]] = []
+        for namespace, checkpoint in latest.items():
+            messages = checkpoint.checkpoint["channel_values"].get("messages", [])
+            depth = namespace.count("|")
+            if depth == 0 and not supervisor:
+                supervisor = messages
+            elif depth == 1:
+                runs.append((checkpoint.checkpoint.get("ts", ""), messages))
+        return supervisor, [messages for _ts, messages in sorted(runs, key=lambda run: run[0])]
 
     def _persist_workflow_result(self, investigation: Investigation, result: dict) -> Investigation:
         """Persist a completed, paused, or failed graph result as product lifecycle state."""

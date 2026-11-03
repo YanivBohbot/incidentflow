@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from time import perf_counter
@@ -16,18 +17,35 @@ from incidentflow.api.routes.investigations import router as investigations_rout
 from incidentflow.core.config import get_settings
 from incidentflow.core.operational_metrics import OperationalMetrics
 
+logger = logging.getLogger(__name__)
+
+
+def _recover_with_default_session() -> int:
+    """Use the application database; imported lazily so tests need no database."""
+    from incidentflow.application.services.investigation_recovery import (
+        recover_interrupted_investigations,
+    )
+    from incidentflow.infrastructure.database.session import SessionLocal
+
+    return recover_interrupted_investigations(SessionLocal)
+
 
 def create_app(
     *,
     checkpointer_context_factory: Callable[[str], AbstractAsyncContextManager[Any]] = (
         open_postgres_checkpointer
     ),
+    recover_interrupted_investigations: Callable[[], int] = _recover_with_default_session,
 ) -> FastAPI:
     settings = get_settings()
     operational_metrics = OperationalMetrics()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        try:
+            recover_interrupted_investigations()
+        except Exception:
+            logger.exception("Could not recover interrupted investigations at startup")
         async with checkpointer_context_factory(settings.checkpoint_database_url) as checkpointer:
             await checkpointer.setup()
             supervisor = build_investigation_supervisor()
