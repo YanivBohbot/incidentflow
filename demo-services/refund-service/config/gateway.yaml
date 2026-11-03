@@ -1,0 +1,5 @@
+version: 3.1.0
+payment_gateway:
+  # Lowered from 10000 ms to fail fast. Gateway refund p95 is about 3 s.
+  timeout_ms: 2000
+  retries: 0
