@@ -10,9 +10,9 @@ from langchain.agents.structured_output import ToolStrategy
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 
-from incidentflow.agent.agents_specialist.contracts import DataIntelligenceFinding
+from incidentflow.agent.findings import DataIntelligenceFinding
 from incidentflow.agent.identities import DATA_INTELLIGENCE_AGENT
-from incidentflow.agent.middleware import build_shared_middleware
+from incidentflow.agent.middleware import TruncateToolOutputMiddleware, build_shared_middleware
 from incidentflow.agent.prompts.data_intelligence import DATA_INTELLIGENCE_SYSTEM_PROMPT
 from incidentflow.core.config import get_settings
 
@@ -21,6 +21,7 @@ def build_data_intelligence_middleware() -> list[AgentMiddleware[Any, Any, Any]]
     """Guard the MongoDB investigation against redundant external queries."""
     return [
         *build_shared_middleware(),
+        TruncateToolOutputMiddleware(max_characters=8000),
         ToolCallLimitMiddleware(
             tool_name="collection-schema",
             run_limit=1,
@@ -52,6 +53,7 @@ def build_data_intelligence_agent(mongodb_tools: list[BaseTool]):
         model=settings.openai_model,
         api_key=settings.openai_api_key,
         temperature=0,
+        timeout=settings.openai_timeout_seconds,
     )
 
     return create_agent(
@@ -66,14 +68,3 @@ def build_data_intelligence_agent(mongodb_tools: list[BaseTool]):
         response_format=ToolStrategy(DataIntelligenceFinding),
     )
 
-
-def build_data_intelligence_analysis_model():
-    """Build the one-shot structured analyst used after bounded MongoDB reads."""
-    settings = get_settings()
-    model = ChatOpenAI(
-        model=settings.openai_model,
-        api_key=settings.openai_api_key,
-        temperature=0,
-        timeout=settings.openai_timeout_seconds,
-    )
-    return model.with_structured_output(DataIntelligenceFinding)
