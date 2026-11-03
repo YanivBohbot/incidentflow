@@ -45,6 +45,12 @@ services:
       # The image ships the CloudWatch MCP server in its own venv; override host uv settings.
       CLOUDWATCH_MCP_COMMAND: /opt/cloudwatch-mcp/bin/awslabs.cloudwatch-mcp-server
       CLOUDWATCH_MCP_COMMAND_ARGS: ""
+      # The MongoDB MCP server runs on the host; 127.0.0.1 inside the container is the container.
+      MONGODB_MCP_URL: ${MONGODB_MCP_DOCKER_URL:-http://host.docker.internal:3000/mcp}
+      # The container has no Docker CLI, so GitHub MCP uses GitHub's remote server over HTTP
+      # with GITHUB_PERSONAL_ACCESS_TOKEN (read-only header set by the client).
+      GITHUB_MCP_TRANSPORT: http
+      GITHUB_MCP_URL: ${GITHUB_MCP_DOCKER_URL:-https://api.githubcopilot.com/mcp/}
     ports:
       - "127.0.0.1:8000:8000"
     volumes:

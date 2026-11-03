@@ -59,7 +59,14 @@ PostgreSQL database and its persisted checkpoints.
 
 ## External integrations
 
-Jira, MongoDB, GitHub, and Pinecone remain disabled by default. The local MCP
+Jira, MongoDB, GitHub, Pinecone, and CloudWatch remain disabled by default. The local MCP
 servers used during development are not automatically exposed to containers.
 Enable an integration only after its credentials, network path, and
 least-privilege policy have been configured for Docker or AWS.
+
+The CloudWatch MCP server is built into the API image. AWS credentials are mounted only with the
+opt-in override file; see [cloudwatch-agent.md](cloudwatch-agent.md#docker-compose):
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.cloudwatch.yml up --build -d
+```
