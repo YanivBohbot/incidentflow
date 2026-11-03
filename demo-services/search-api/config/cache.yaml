@@ -1,0 +1,4 @@
+redis:
+  failover: automatic
+  # Cache pre-warm after failover is not configured yet.
+  prewarm_after_failover: false
