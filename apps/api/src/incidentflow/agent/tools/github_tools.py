@@ -1,64 +1,93 @@
-"""Supervisor tool for read-only GitHub change analysis."""
+"""ask_github: the Supervisor delegates to the GitHub Agent (a create_agent).
+
+The agent chooses its GitHub reads (commits, pull requests, code search) itself. Its middleware
+keeps every call inside the allowlisted repositories, truncates large results, and bounds the
+loop. It returns a validated GitHubFinding.
+"""
 
 import logging
+from datetime import UTC, datetime, timedelta
 
 from langchain.tools import tool
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
+from langchain_core.runnables import RunnableConfig
 
-from incidentflow.agent.agents_specialist.contracts import GitHubFinding
-from incidentflow.agent.agents_specialist.github import build_github_analysis_model
-from incidentflow.agent.guardrails.external_evidence import mark_external_content_as_evidence
+from incidentflow.agent.agents_specialist.github import build_github_agent
+from incidentflow.agent.findings import GitHubFinding
 from incidentflow.agent.mcp_clients.github import GitHubMCPClient
-from incidentflow.agent.prompts.github import GITHUB_ANALYSIS_SYSTEM_PROMPT
+from incidentflow.agent.tools.subagent_runtime import subagent_config
 from incidentflow.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 
-async def _analyse_incident_related_github_changes(incident_context: str) -> str:
-    """Collect allowed GitHub changes, then relate them to the incident context.
+def _task(
+    incident_context: str,
+    repositories: tuple[str, ...],
+    branch: str | None = None,
+    lookback_days: int = 14,
+) -> str:
+    """The delegation message: the incident, the readable repositories, and the time window.
 
-    The application fetches commits and pull requests before the model writes its finding.
+    The model does not know today's date, so the application gives the window explicitly.
     """
+    since = (datetime.now(UTC) - timedelta(days=lookback_days)).replace(microsecond=0)
+    targets = "; ".join(
+        f"{repository} (owner={repository.split('/')[0]}, repo={repository.split('/', 1)[1]})"
+        for repository in repositories
+    )
+    return (
+        f"Incident context:\n{incident_context}\n\n"
+        f"Allowed repositories: {targets}\n"
+        f"Today (UTC): {datetime.now(UTC).date().isoformat()}. "
+        f"Look at changes since {since.isoformat()} (pass since=... to list_commits).\n"
+        "search_code must put the repository in the query, for example: "
+        f"'<terms> repo:{repositories[0]}'."
+        + (
+            f"\nRead branch {branch}: pass sha={branch} to list_commits, and base={branch} "
+            "with state=all to list_pull_requests. Code search only covers the default branch."
+            if branch
+            else ""
+        )
+    )
+
+
+async def _investigate_with_github_agent(incident_context: str, config: RunnableConfig) -> str:
+    """Run the GitHub subagent with the live read-only MCP tools."""
     settings = get_settings()
     if not settings.github_mcp_is_configured:
         raise RuntimeError("GitHub MCP transport must be configured when GitHub MCP is enabled.")
-
+    repositories = settings.github_mcp_allowed_repositories
     async with _create_github_mcp_client().read_tools() as tool_set:
-        evidence_blocks: list[str] = []
-        for repository in settings.github_mcp_allowed_repositories:
-            owner, repo = repository.split("/", maxsplit=1)
-            for tool_name in ("list_commits", "list_pull_requests"):
-                try:
-                    result = await tool_set.get(tool_name).ainvoke({"owner": owner, "repo": repo})
-                    content = getattr(result, "content", result)
-                    evidence_blocks.append(
-                        mark_external_content_as_evidence(
-                            f"{tool_name} for {repository}", str(content)[:6000]
-                        )
-                    )
-                except Exception as error:  # noqa: BLE001 - preserve partial MCP evidence.
-                    logger.warning("GitHub MCP read failed for %s in %s", tool_name, repository)
-                    evidence_blocks.append(f"{tool_name} for {repository} failed: {type(error).__name__}.")
-
-    analyzer = build_github_analysis_model()
-    finding = await analyzer.ainvoke(
-        [
-            SystemMessage(content=GITHUB_ANALYSIS_SYSTEM_PROMPT),
-            HumanMessage(content=f"Incident context:\n{incident_context}\n\nGitHub evidence collected by the application:\n" + "\n\n".join(evidence_blocks)),
-        ]
-    )
-    return finding.model_dump_json()
+        agent = build_github_agent(tool_set.read_tools)
+        result = await agent.ainvoke(
+            {"messages": [HumanMessage(content=_task(incident_context, repositories, settings.github_mcp_branch))]},
+            config=subagent_config(config),
+        )
+    finding = result.get("structured_response")
+    if finding is None:
+        return GitHubFinding(
+            summary="The GitHub agent stopped before writing its finding.",
+            repository=", ".join(repositories),
+            limitations=["The GitHub agent reached its call limit without a finding."],
+            confidence=0,
+        ).model_dump_json()
+    return GitHubFinding.model_validate(finding).model_dump_json()
 
 
 def _create_github_mcp_client() -> GitHubMCPClient:
     """Create the configured read-only connection to the GitHub MCP server.
 
-    It supports either an HTTP MCP server or the local Docker-based MCP process.
+    HTTP targets GitHub's remote MCP server with the personal access token (works from the
+    API container). stdio runs the server locally with `docker run` (works on a host that
+    has Docker).
     """
     settings = get_settings()
     if settings.github_mcp_transport == "http":
-        return GitHubMCPClient(server_url=settings.github_mcp_url)
+        return GitHubMCPClient(
+            server_url=settings.github_mcp_url,
+            personal_access_token=settings.github_personal_access_token,
+        )
     return GitHubMCPClient(
         command=settings.github_mcp_command,
         command_args=settings.github_mcp_stdio_arguments,
@@ -70,12 +99,12 @@ def _create_github_mcp_client() -> GitHubMCPClient:
     "ask_github",
     description="Inspect read-only GitHub commits and pull requests in allowed repositories. Use for code-change evidence relevant to an incident.",
 )
-async def ask_github(incident_context: str) -> str:
+async def ask_github(incident_context: str, config: RunnableConfig) -> str:
     """Delegate an incident question to the read-only GitHub specialist."""
     settings = get_settings()
     if settings.github_mcp_enabled and settings.github_mcp_is_configured and settings.github_mcp_allowed_repositories:
         try:
-            finding_json = await _analyse_incident_related_github_changes(incident_context)
+            finding_json = await _investigate_with_github_agent(incident_context, config)
             return finding_json
         except Exception:
             logger.exception("GitHub specialist delegation failed")

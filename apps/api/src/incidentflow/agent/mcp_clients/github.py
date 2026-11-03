@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from fastmcp import Client
 from fastmcp.client import StdioTransport
+from fastmcp.client.transports import StreamableHttpTransport
 from langchain.mcp import MCPAdapter
 from langchain_core.tools import BaseTool
 
@@ -79,6 +80,18 @@ class GitHubMCPClient:
                 environment["GITHUB_PERSONAL_ACCESS_TOKEN"] = self.personal_access_token
             return Client(StdioTransport(self.command, command_args, env=environment))
         if self.server_url:
+            if self.personal_access_token:
+                # GitHub's remote MCP server accepts a PAT; X-MCP-Readonly removes every write
+                # tool on the server side, in addition to the read-tool allowlist below.
+                return Client(
+                    StreamableHttpTransport(
+                        self.server_url,
+                        headers={
+                            "Authorization": f"Bearer {self.personal_access_token}",
+                            "X-MCP-Readonly": "true",
+                        },
+                    )
+                )
             return Client(self.server_url, auth="oauth")
         raise RuntimeError("GitHub MCP client has no configured transport.")
 

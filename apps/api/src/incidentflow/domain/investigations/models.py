@@ -1,10 +1,11 @@
 from datetime import UTC, datetime
 from enum import Enum
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
-from incidentflow.agent.agents_specialist.contracts import InvestigationReport
+from incidentflow.agent.findings import InvestigationReport
 from incidentflow.domain.human_review.models import HumanReview
 
 
@@ -43,3 +44,25 @@ class Investigation(BaseModel):
     error_message: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+
+class InvestigationTraceStep(BaseModel):
+    """One readable step of a multi-agent investigation, rebuilt from its checkpoint."""
+
+    kind: Literal[
+        "request",
+        "reasoning",
+        "delegation",
+        "subagent_call",
+        "finding",
+        "limit",
+        "review_pause",
+        "review_decision",
+        "report",
+    ]
+    actor: str = Field(description="Who acted: Operator, the supervisor, or a specialist.")
+    title: str
+    detail: str = ""
+    status: Literal["live", "unavailable", "pending", "approved", "rejected", "info"] = "info"
+    confidence: float | None = None
+    data: dict[str, Any] = Field(default_factory=dict)
