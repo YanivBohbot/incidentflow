@@ -11,7 +11,7 @@ from langchain.agents.structured_output import ToolStrategy
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 
-from incidentflow.agent.agents_specialist.contracts import InvestigationReport
+from incidentflow.agent.findings import InvestigationReport
 from incidentflow.agent.identities import INVESTIGATION_SUPERVISOR
 from incidentflow.agent.middleware import build_shared_middleware
 from incidentflow.agent.prompts.supervisor import SUPERVISOR_SYSTEM_PROMPT
@@ -57,8 +57,10 @@ def build_supervisor_middleware(
             on_failure="continue",
         ),
         *build_shared_middleware(),
+        # "continue" blocks only the extra call and tells the supervisor, which must still
+        # return its InvestigationReport. "end" would stop the agent without any report.
         *[
-            ToolCallLimitMiddleware(tool_name=tool_name, run_limit=2, exit_behavior="end")
+            ToolCallLimitMiddleware(tool_name=tool_name, run_limit=2, exit_behavior="continue")
             for tool_name in (
                 "ask_it_operations",
                 "ask_data_intelligence",

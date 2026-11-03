@@ -2,12 +2,23 @@
 
 from typing import Any
 
-from incidentflow.agent.agents_specialist.contracts import InvestigationReport
+from incidentflow.agent.findings import InvestigationReport
 from incidentflow.domain.human_review.models import (
     HumanReview,
     HumanReviewDecision,
     HumanReviewType,
 )
+
+# Only the text of a Jira write may be edited by the operator. The target (site, project,
+# issue type, issue key) stays exactly what the agent proposed and the operator reviewed.
+JIRA_EDITABLE_FIELDS: dict[str, tuple[str, ...]] = {
+    "createJiraIssue": ("summary", "description"),
+    "addOrEditJiraIssueComment": ("commentBody",),
+}
+
+
+class HumanReviewEditError(ValueError):
+    """The operator tried to edit a Jira argument that is not editable."""
 
 
 def accepted_human_review(report: InvestigationReport) -> HumanReview | None:
@@ -33,24 +44,51 @@ def jira_write_review_from_interrupt(payload: object) -> HumanReview | None:
     name = action.get("name")
     arguments = action.get("arguments", action.get("args"))
     description = action.get("description")
-    if name not in {"createJiraIssue", "addOrEditJiraIssueComment"}:
+    if name not in JIRA_EDITABLE_FIELDS:
         return None
     return HumanReview(
         review_type=HumanReviewType.JIRA_WRITE,
         reason=str(description or f"Approve Jira tool call: {name}"),
-        draft={"tool_name": name, "arguments": arguments if isinstance(arguments, dict) else {}},
+        draft={
+            "tool_name": name,
+            "arguments": arguments if isinstance(arguments, dict) else {},
+            "editable_fields": list(JIRA_EDITABLE_FIELDS[name]),
+        },
     )
 
 
-def jira_tool_resume_payload(decision: HumanReviewDecision) -> dict[str, list[dict[str, Any]]]:
-    """Map the product review decision onto LangChain's tool-review protocol."""
-    if decision.decision.value == "APPROVE":
+def jira_tool_resume_payload(
+    decision: HumanReviewDecision, review: HumanReview | None = None
+) -> dict[str, list[dict[str, Any]]]:
+    """Map the product review decision onto LangChain's tool-review protocol.
+
+    APPROVE without edits -> "approve"; APPROVE with edited text -> "edit" (the original
+    arguments with only the permitted fields replaced); REJECT and REQUEST_INFORMATION ->
+    "reject" with the operator's reason, which the Jira agent reads as the tool result.
+    """
+    if decision.decision.value != "APPROVE":
+        return {
+            "decisions": [
+                {
+                    "type": "reject",
+                    "message": decision.reason or "The operator rejected this Jira write.",
+                }
+            ]
+        }
+    if not decision.edited_draft:
         return {"decisions": [{"type": "approve"}]}
+    if review is None:
+        raise HumanReviewEditError("Edits require the paused Jira review.")
+    tool_name = review.draft.get("tool_name")
+    editable = JIRA_EDITABLE_FIELDS.get(str(tool_name), ())
+    forbidden = sorted(set(decision.edited_draft) - set(editable))
+    if forbidden:
+        raise HumanReviewEditError(f"These Jira fields cannot be edited: {', '.join(forbidden)}.")
+    original = review.draft.get("arguments")
+    arguments = dict(original) if isinstance(original, dict) else {}
+    arguments.update(decision.edited_draft)
     return {
         "decisions": [
-            {
-                "type": "reject",
-                "message": decision.reason or "The operator rejected this Jira write.",
-            }
+            {"type": "edit", "edited_action": {"name": str(tool_name), "args": arguments}}
         ]
     }

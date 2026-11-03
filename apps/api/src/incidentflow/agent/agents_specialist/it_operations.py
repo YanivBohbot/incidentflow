@@ -1,9 +1,10 @@
 from langchain.agents import create_agent
 from langchain.agents.middleware import HumanInTheLoopMiddleware
+from langchain.agents.structured_output import ToolStrategy
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 
-from incidentflow.agent.agents_specialist.contracts import ITOperationsFinding
+from incidentflow.agent.findings import ITOperationsFinding
 from incidentflow.agent.identities import IT_OPERATIONS_AGENT
 from incidentflow.agent.middleware import build_shared_middleware
 from incidentflow.agent.prompts.it_operations import IT_OPERATIONS_SYSTEM_PROMPT
@@ -30,11 +31,11 @@ def build_it_operations_agent(jira_tools: list[BaseTool]):
             HumanInTheLoopMiddleware(
                 interrupt_on={
                     "createJiraIssue": {
-                        "allowed_decisions": ["approve", "reject"],
+                        "allowed_decisions": ["approve", "edit", "reject"],
                         "description": "Jira issue creation requires operator approval.",
                     },
                     "addOrEditJiraIssueComment": {
-                        "allowed_decisions": ["approve", "reject"],
+                        "allowed_decisions": ["approve", "edit", "reject"],
                         "description": "Jira comment publication requires operator approval.",
                     },
                 },
@@ -42,5 +43,7 @@ def build_it_operations_agent(jira_tools: list[BaseTool]):
             ),
             *build_shared_middleware(),
         ],
-        response_format=ITOperationsFinding,
+        # ToolStrategy returns validation errors to the model so it can correct its answer,
+        # like the other specialists; native structured output fails on malformed JSON.
+        response_format=ToolStrategy(ITOperationsFinding),
     )
