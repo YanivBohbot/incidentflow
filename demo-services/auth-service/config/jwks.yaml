@@ -1,0 +1,5 @@
+jwks:
+  # Raised from 10m to reduce JWKS fetches; longer than the 1h key-rotation overlap.
+  cache_ttl: 24h
+rotation:
+  overlap: 1h
