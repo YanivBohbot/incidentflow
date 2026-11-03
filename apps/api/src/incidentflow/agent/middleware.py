@@ -36,6 +36,36 @@ class ExternalEvidenceBoundaryMiddleware(AgentMiddleware):
         return wrap_external_evidence_tool_message(request.tool_call["name"], result)
 
 
+class TruncateToolOutputMiddleware(AgentMiddleware):
+    """Keep large tool results (commit lists, query results) within a token budget."""
+
+    def __init__(self, max_characters: int = 6000) -> None:
+        self.max_characters = max_characters
+
+    def _truncate(self, result: ToolResult) -> ToolResult:
+        if not isinstance(result, ToolMessage):
+            return result
+        content = str(result.content)
+        if len(content) <= self.max_characters:
+            return result
+        kept = content[: self.max_characters]
+        return result.model_copy(update={"content": f"{kept}\n[truncated {len(content)} chars]"})
+
+    def wrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], ToolResult],
+    ) -> ToolResult:
+        return self._truncate(handler(request))
+
+    async def awrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], Awaitable[ToolResult]],
+    ) -> ToolResult:
+        return self._truncate(await handler(request))
+
+
 def build_shared_middleware() -> list[AgentMiddleware[Any, Any, Any]]:
     """Return shared middleware enabled for every specialist agent.
 
