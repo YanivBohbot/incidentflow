@@ -6,9 +6,10 @@ from langchain.tools import tool
 from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphInterrupt
 
-from incidentflow.agent.agents_specialist.contracts import ITOperationsFinding
 from incidentflow.agent.agents_specialist.it_operations import build_it_operations_agent
+from incidentflow.agent.findings import ITOperationsFinding
 from incidentflow.agent.mcp_clients.jira import JiraMCPClient
+from incidentflow.agent.tools.subagent_runtime import subagent_config
 from incidentflow.core.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -30,9 +31,23 @@ async def _investigate_incident_with_jira(
         agent = build_it_operations_agent(jira_tools=[*tool_set.read_tools, *tool_set.write_tools])
         result = await agent.ainvoke(
             {"messages": [{"role": "user", "content": incident_context}]},
-            config=config,
+            config=subagent_config(config),
         )
         return result["structured_response"].model_dump_json()
+
+
+def with_operator_request(incident_context: str, config: RunnableConfig | None) -> str:
+    """Put the operator's own words in front of the supervisor's summary.
+
+    A Jira write must be requested explicitly by the operator. The supervisor may paraphrase
+    or drop that request, so the application forwards the original request itself.
+    """
+    original = ((config or {}).get("configurable") or {}).get("incident_request")
+    if not original or original in incident_context:
+        return incident_context
+    return (
+        f"Operator request (verbatim):\n{original}\n\nSupervisor context:\n{incident_context}"
+    )
 
 
 @tool(
@@ -44,6 +59,7 @@ async def _investigate_incident_with_jira(
 )
 async def ask_it_operations(incident_context: str, config: RunnableConfig) -> str:
     """Delegate Jira work while preserving the parent graph's durable runtime context."""
+    incident_context = with_operator_request(incident_context, config)
     settings = get_settings()
     if settings.jira_mcp_enabled:
         try:

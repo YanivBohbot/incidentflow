@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     )
     github_mcp_enabled: bool = False
     github_mcp_repositories: str = ""
+    # Optional branch to investigate instead of the default branch (for example the demo branch).
+    github_mcp_branch: str | None = None
     github_personal_access_token: str | None = None
     cloudwatch_mcp_enabled: bool = False
     cloudwatch_mcp_command: str = "uv"
