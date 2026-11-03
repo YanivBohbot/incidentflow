@@ -1,13 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
-import type { Incident, IncidentLessonConfirmation, Investigation, JiraCommentProposalInput, JiraIssueProposalInput, JiraProposal } from '../api'
+import type {
+  HumanReviewDecision,
+  Incident,
+  IncidentLessonConfirmation,
+  Investigation,
+  OperationalMetrics,
+  Readiness,
+} from '../api'
+
+const WORKSPACE_REFRESH_MS = 10_000
 
 export function useIncidentFlow() {
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [investigations, setInvestigations] = useState<Investigation[]>([])
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null)
   const [selectedInvestigation, setSelectedInvestigation] = useState<Investigation | null>(null)
-  const [proposals, setProposals] = useState<JiraProposal[]>([])
+  const [operationalMetrics, setOperationalMetrics] = useState<OperationalMetrics>({
+    investigations_by_lifecycle: {},
+    requests_by_status: {},
+  })
+  const [readiness, setReadiness] = useState<Readiness>({ status: 'starting' })
   const [statusMessage, setStatusMessage] = useState('Connecting to the IncidentFlow API…')
   const [isLoading, setIsLoading] = useState(true)
 
@@ -17,14 +30,26 @@ export function useIncidentFlow() {
     return items
   }, [])
 
+  const refreshWorkspace = useCallback(async () => {
+    const [incidentItems, investigationItems, readinessSnapshot, metricsSnapshot] = await Promise.all([
+      api.listIncidents(),
+      api.listInvestigations(),
+      api.getReadiness(),
+      api.getOperationalMetrics(),
+    ])
+    setIncidents(incidentItems)
+    setInvestigations(investigationItems)
+    setReadiness(readinessSnapshot)
+    setOperationalMetrics(metricsSnapshot)
+    return { incidentItems, investigationItems }
+  }, [])
+
   useEffect(() => {
     let isCurrent = true
     async function loadWorkspace() {
       try {
-        const [incidentItems, investigationItems] = await Promise.all([api.listIncidents(), api.listInvestigations()])
+        await refreshWorkspace()
         if (!isCurrent) return
-        setIncidents(incidentItems)
-        setInvestigations(investigationItems)
         setStatusMessage('API connected')
       } catch (error) {
         if (isCurrent) setStatusMessage(error instanceof Error ? error.message : 'Could not connect to the API.')
@@ -33,17 +58,21 @@ export function useIncidentFlow() {
       }
     }
     void loadWorkspace()
-    return () => { isCurrent = false }
-  }, [])
-
-  useEffect(() => {
-    if (!selectedInvestigation) return
-    let isCurrent = true
-    void api.listJiraProposals(selectedInvestigation.id)
-      .then((items) => { if (isCurrent) setProposals(items) })
-      .catch((error: unknown) => { if (isCurrent) setStatusMessage(error instanceof Error ? error.message : 'Could not load Jira proposals.') })
-    return () => { isCurrent = false }
-  }, [selectedInvestigation])
+    // Investigations can pause from anywhere (another tab, the API, a script): refresh
+    // regularly so the approval badge and banner appear without reloading the page.
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refreshWorkspace().catch(() => undefined)
+    }, WORKSPACE_REFRESH_MS)
+    const refreshOnFocus = () => {
+      if (document.visibilityState === 'visible') void refreshWorkspace().catch(() => undefined)
+    }
+    document.addEventListener('visibilitychange', refreshOnFocus)
+    return () => {
+      isCurrent = false
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', refreshOnFocus)
+    }
+  }, [refreshWorkspace])
 
   const createIncident = useCallback(async (data: Pick<Incident, 'title' | 'description' | 'priority'>) => {
     try {
@@ -72,98 +101,75 @@ export function useIncidentFlow() {
   const startInvestigation = useCallback(async () => {
     if (!selectedIncident) return null
     setStatusMessage('Running the investigation workflow…')
+    // The start request returns only when the workflow finishes or pauses. Meanwhile, poll the
+    // list so the RUNNING investigation appears and its agent trace can be followed live.
+    const startedAt = Date.now()
+    const poller = window.setInterval(() => {
+      void api.listInvestigations().then((items) => {
+        setInvestigations(items)
+        const running = items.find((item) => item.incident_id === selectedIncident.id
+          && item.lifecycle === 'RUNNING' && Date.parse(item.created_at) >= startedAt - 5000)
+        if (running) setSelectedInvestigation((current) => current?.id === running.id ? current : running)
+      }).catch(() => undefined)
+    }, 1500)
     try {
       const investigation = await api.startInvestigation(selectedIncident.id, selectedIncident.description)
       setSelectedInvestigation(investigation)
       setInvestigations((items) => [investigation, ...items.filter((item) => item.id !== investigation.id)])
-      setStatusMessage(investigation.lifecycle === 'COMPLETED' ? 'Investigation completed.' : 'Investigation finished with a failure.')
+      setStatusMessage(
+        investigation.lifecycle === 'COMPLETED'
+          ? 'Investigation completed.'
+          : investigation.lifecycle === 'AWAITING_HUMAN_REVIEW'
+            ? 'Investigation paused for a human decision.'
+            : 'Investigation finished with a failure.',
+      )
       return investigation
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : 'Investigation failed.')
       await refreshInvestigations()
       return null
+    } finally {
+      window.clearInterval(poller)
     }
   }, [refreshInvestigations, selectedIncident])
 
-  const approveProposal = useCallback(async (proposal: JiraProposal) => {
-    setStatusMessage('Executing the approved Jira action…')
+  /** Resume the durable workflow after an explicit operator decision. */
+  const resolveHumanReview = useCallback(async (investigation: Investigation, decision: HumanReviewDecision) => {
+    setStatusMessage('Resuming the investigation with the operator decision…')
     try {
-      const updated = await api.approveJiraProposal(proposal.id)
-      setProposals((items) => items.map((item) => item.id === updated.id ? updated : item))
-      setStatusMessage(updated.state === 'EXECUTED' ? 'Jira action executed.' : `Jira action failed: ${updated.error_message ?? 'Unknown error.'}`)
+      const updated = await api.resolveHumanReview(investigation.id, decision)
+      setInvestigations((items) => items.map((item) => item.id === updated.id ? updated : item))
+      setSelectedInvestigation((item) => item?.id === updated.id ? updated : item)
+      setStatusMessage(updated.lifecycle === 'COMPLETED' ? 'Investigation completed.' : `Investigation is ${updated.lifecycle.toLowerCase()}.`)
+      await refreshWorkspace()
+      return updated
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : 'Could not approve the Jira action.')
-    }
-  }, [])
-
-  const rejectProposal = useCallback(async (proposal: JiraProposal, reason: string) => {
-    try {
-      const updated = await api.rejectJiraProposal(proposal.id, { actor: 'local-operator', reason: reason || undefined })
-      setProposals((items) => items.map((item) => item.id === updated.id ? updated : item))
-      setStatusMessage('Jira proposal rejected. Jira was not contacted.')
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : 'Could not reject the Jira proposal.')
-    }
-  }, [])
-
-  const cancelProposal = useCallback(async (proposal: JiraProposal, reason: string) => {
-    try {
-      const updated = await api.cancelJiraProposal(proposal.id, { actor: 'local-operator', reason: reason || undefined })
-      setProposals((items) => items.map((item) => item.id === updated.id ? updated : item))
-      setStatusMessage('Jira proposal cancelled. Jira was not contacted.')
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : 'Could not cancel the Jira proposal.')
-    }
-  }, [])
-
-  const proposeJiraIssue = useCallback(async (data: JiraIssueProposalInput) => {
-    if (!selectedInvestigation) return
-    try {
-      const proposal = await api.proposeJiraIssue(selectedInvestigation.id, data)
-      setProposals((items) => [proposal, ...items])
-      setStatusMessage('Jira issue proposal saved. Awaiting human approval.')
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : 'Could not save the Jira issue proposal.')
+      setStatusMessage(error instanceof Error ? error.message : 'Could not resume the investigation.')
       throw error
     }
-  }, [selectedInvestigation])
-
-  const proposeJiraComment = useCallback(async (data: JiraCommentProposalInput) => {
-    if (!selectedInvestigation) return
-    try {
-      const proposal = await api.proposeJiraComment(selectedInvestigation.id, data)
-      setProposals((items) => [proposal, ...items])
-      setStatusMessage('Jira comment proposal saved. Awaiting human approval.')
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : 'Could not save the Jira comment proposal.')
-      throw error
-    }
-  }, [selectedInvestigation])
+  }, [refreshWorkspace])
 
   const selectInvestigation = useCallback((investigation: Investigation) => {
     setSelectedInvestigation(investigation)
-    setProposals([])
   }, [])
 
   const metrics = useMemo(() => ({
     incidentCount: incidents.length,
     runningInvestigationCount: investigations.filter((item) => item.lifecycle === 'RUNNING').length,
-    pendingApprovalCount: proposals.filter((proposal) => proposal.state === 'PENDING').length,
-  }), [incidents, investigations, proposals])
+    pendingApprovalCount: investigations.filter((item) => item.lifecycle === 'AWAITING_HUMAN_REVIEW').length,
+  }), [incidents, investigations])
 
   return {
-    approveProposal,
-    cancelProposal,
     confirmIncidentLesson,
     createIncident,
     incidents,
     investigations,
     isLoading,
     metrics,
-    proposeJiraComment,
-    proposeJiraIssue,
-    proposals,
-    rejectProposal,
+    operationalMetrics,
+    readiness,
+    refreshWorkspace,
+    resolveHumanReview,
     selectedIncident,
     selectedInvestigation,
     setSelectedIncident,
