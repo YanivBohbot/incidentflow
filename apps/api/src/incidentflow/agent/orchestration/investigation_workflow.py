@@ -48,10 +48,15 @@ async def investigate_with_supervisor(
     *,
     supervisor: Any,
 ) -> dict:
-    """Call the compiled Supervisor explicitly with the parent workflow configuration."""
+    """Call the compiled Supervisor explicitly with the parent workflow configuration.
+
+    The operator's original request travels in the config so a delegation tool can read it
+    word for word, even when the supervisor paraphrases it in the tool arguments.
+    """
+    configurable = {**config.get("configurable", {}), "incident_request": state["incident_request"]}
     result = await supervisor.ainvoke(
         {"messages": state["messages"]},
-        config=config,
+        config={**config, "configurable": configurable},
     )
     return {
         "messages": result.get("messages", []),
@@ -61,15 +66,23 @@ async def investigate_with_supervisor(
 
 def capture_supervisor_report(state: InvestigationWorkflowState) -> dict:
     """Copy the Supervisor's structured response into the investigation contract."""
-    report = state["structured_response"]
+    report = state.get("structured_response")
     if report is None:
-        return {"errors": ["The Supervisor completed without a structured report."]}
+        return {
+            "report": None,
+            "human_review": None,
+            "errors": ["The Supervisor completed without a structured report."],
+        }
     return {"report": report, "human_review": accepted_human_review(report)}
 
 
-def route_after_investigation(state: InvestigationWorkflowState) -> Literal["review", "finalize"]:
-    """Pause only when the report contains a policy-accepted review."""
-    return "review" if state["human_review"] is not None else "finalize"
+def route_after_investigation(
+    state: InvestigationWorkflowState,
+) -> Literal["review", "finalize", "fail"]:
+    """Fail without a report, pause only for a policy-accepted review, otherwise finalize."""
+    if state.get("report") is None:
+        return "fail"
+    return "review" if state.get("human_review") is not None else "finalize"
 
 
 def review(state: InvestigationWorkflowState) -> Command:
@@ -116,7 +129,9 @@ def build_investigation_workflow(
     workflow.add_conditional_edges("validate", route_after_validation, ["prepare", "fail"])
     workflow.add_edge("prepare", "investigate")
     workflow.add_edge("investigate", "capture_report")
-    workflow.add_conditional_edges("capture_report", route_after_investigation, ["review", "finalize"])
+    workflow.add_conditional_edges(
+        "capture_report", route_after_investigation, ["review", "finalize", "fail"]
+    )
     workflow.add_edge("review", "finalize")
     workflow.add_edge("finalize", END)
     workflow.add_edge("fail", END)
