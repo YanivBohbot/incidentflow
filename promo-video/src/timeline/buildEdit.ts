@@ -18,6 +18,10 @@ function protectedSpans(timeline: Timeline): [number, number][] {
       spans.push([e.t - PROTECT_AROUND_S, e.t + PROTECT_AROUND_S])
     }
   }
+  // The human review is the point of the demo: keep it readable from the pause to the approval.
+  const pause = Math.min(...timeline.events.filter((e) => e.kind === 'hitl_pause').map((e) => e.t))
+  const approved = timeline.events.find((e) => e.kind === 'approved' && e.t > pause)
+  if (approved) spans.push([pause - PROTECT_AROUND_S, approved.t + PROTECT_AROUND_S])
   return spans
 }
 

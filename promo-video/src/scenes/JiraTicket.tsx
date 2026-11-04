@@ -1,46 +1,94 @@
-import { Footage, placeSegments, placedDuration } from '../components/Footage'
+import { Img, interpolate, staticFile, useCurrentFrame } from 'remotion'
 import { Card, FRAME, FRAME_H, Stage } from '../components/Stage'
-import { FOCUS } from '../timeline/camera'
-import type { Segment, Timeline } from '../timeline/types'
+import { lerpBox } from '../timeline/camera'
+import type { Box } from '../timeline/types'
 
-/** From the moment the ticket page is shown to the end of the recording, at real speed. */
-export function jiraSegments(timeline: Timeline): Segment[] {
-  const shown = timeline.events.find((e) => e.kind === 'page')?.t ?? 0
-  return [{ srcFrom: Math.max(0, shown - 0.5), srcTo: timeline.durationS, speed: 1 }]
-}
+/** Screenshot of the real ticket page, taken by the owner (Google sign-in blocks automation). */
+export const JIRA_SHOT = { file: 'jira.png', width: 1504, height: 921, key: 'SAM1-23' }
+export const JIRA_FRAMES = 11 * 30
 
-export function jiraDurationFrames(timeline: Timeline, fps: number): number {
-  return placedDuration(placeSegments(jiraSegments(timeline), fps))
+const SHOTS: { at: number; box: Box }[] = [
+  { at: 0, box: { x: 0, y: 0, width: 1504, height: 846 } },
+  { at: 75, box: { x: 320, y: 50, width: 760, height: 428 } },
+  { at: 200, box: { x: 790, y: 60, width: 714, height: 402 } },
+]
+/** Personal details on the page: reporter name and avatars. */
+const MASKS: Box[] = [
+  { x: 1252, y: 548, width: 130, height: 32 },
+  { x: 1472, y: 4, width: 32, height: 32 },
+  { x: 348, y: 866, width: 32, height: 32 },
+]
+const MOVE = 30
+
+function viewAt(frame: number): Box {
+  const index = SHOTS.filter((s) => s.at <= frame).length - 1
+  const target = SHOTS[Math.max(0, index)]
+  const previous = SHOTS[Math.max(0, index - 1)]
+  const p = interpolate(frame, [target.at, target.at + MOVE], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing: (t) => t * t * (3 - 2 * t),
+  })
+  return lerpBox(previous.box, target.box, p)
 }
 
 /** The real Jira ticket the approved tool call created. */
-export function JiraTicket({ timeline }: { timeline: Timeline }) {
-  const key = timeline.investigationId
+export function JiraTicket() {
+  const frame = useCurrentFrame()
+  const view = viewAt(frame)
+  const zoom = FRAME.width / view.width
   return (
     <Stage
-      heading={`Created in Jira — ${key}`}
+      heading={`Created in Jira — ${JIRA_SHOT.key}`}
+      windowTitle={`Jira — ${JIRA_SHOT.key}`}
       window={
-        <Footage
-          timeline={timeline}
-          segments={jiraSegments(timeline)}
-          keys={[{ atSrc: 0, box: FOCUS.full }]}
-          width={FRAME.width}
-          height={FRAME_H}
-        />
+        <div style={{ position: 'relative', width: FRAME.width, height: FRAME_H, overflow: 'hidden', background: '#fff' }}>
+          <div
+            style={{
+              position: 'absolute',
+              width: JIRA_SHOT.width,
+              height: JIRA_SHOT.height,
+              transformOrigin: 'top left',
+              transform: `translate(${-view.x * zoom}px, ${-view.y * zoom}px) scale(${zoom})`,
+            }}
+          >
+            <Img src={staticFile(JIRA_SHOT.file)} style={{ width: JIRA_SHOT.width, height: JIRA_SHOT.height }} />
+            {MASKS.map((m, i) => (
+              <div
+                key={i}
+                style={{
+                  position: 'absolute',
+                  left: m.x,
+                  top: m.y,
+                  width: m.width,
+                  height: m.height,
+                  backdropFilter: 'blur(8px)',
+                  background: 'rgb(203,213,225)',
+                  borderRadius: 6,
+                }}
+              />
+            ))}
+          </div>
+        </div>
       }
       column={
         <>
           <Card
-            enterFrame={6}
-            title={`${key} is real`}
+            enterFrame={10}
+            title={`${JIRA_SHOT.key} is real`}
             body="Created by the IT Operations agent through Atlassian MCP, only after the operator approved the exact tool call."
             chips={['Atlassian MCP', 'HumanInTheLoopMiddleware']}
             tone="ok"
           />
           <Card
-            enterFrame={40}
+            enterFrame={80}
             title="Written from the evidence"
-            body="The summary and description combine the CloudWatch alarms, MongoDB events, the GitHub PR and the runbook."
+            body="CloudWatch alarms and logs, MongoDB events, the GitHub PR and the runbook — combined into one actionable ticket."
+          />
+          <Card
+            enterFrame={205}
+            title="Ready for on-call"
+            body="Task · High priority · To Do — in the team's project, no copy-paste needed."
           />
         </>
       }

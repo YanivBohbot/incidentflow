@@ -14,7 +14,9 @@ export function Stage({
   badge,
   window,
   column,
+  windowTitle = 'IncidentFlow — Operations console',
 }: {
+  windowTitle?: string
   heading: string
   badge?: string
   window: ReactNode
@@ -70,7 +72,7 @@ export function Stage({
           {['#f87171', '#f5b942', '#34d399'].map((c) => (
             <span key={c} style={{ width: 12, height: 12, borderRadius: 6, background: c }} />
           ))}
-          <span style={{ marginLeft: 12 }}>IncidentFlow — Operations console</span>
+          <span style={{ marginLeft: 12 }}>{windowTitle}</span>
         </div>
         {window}
       </div>

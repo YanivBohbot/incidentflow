@@ -89,7 +89,7 @@ export function Footage({ timeline, segments, keys, width, height }: Props) {
               width: m.box.width,
               height: m.box.height,
               backdropFilter: 'blur(12px)',
-              background: 'rgba(148,163,184,.35)',
+              background: 'rgb(203,213,225)',
               borderRadius: 6,
             }}
           />

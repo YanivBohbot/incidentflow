@@ -5,11 +5,11 @@
   "scripts": {
     "studio": "remotion studio src/index.ts",
     "render": "remotion render src/index.ts IncidentFlowPromo out/incidentflow-promo.mp4",
-    "gif": "remotion render src/index.ts IncidentFlowLoop out/incidentflow-loop.gif --codec=gif --every-nth-frame=2 --scale=0.5",
+    "gif": "remotion render src/index.ts IncidentFlowLoop out/incidentflow-loop.gif --codec=gif --every-nth-frame=7 --scale=0.4",
     "film": "tsx film/film.ts",
     "test": "vitest run",
     "tour": "tsx film/tour.ts",
-    "jira": "tsx film/jira.ts"
+    "loop": "remotion render src/index.ts IncidentFlowLoop out/incidentflow-loop.mp4 --scale=0.5"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.540",

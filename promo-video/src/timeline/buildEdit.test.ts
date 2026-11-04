@@ -35,6 +35,13 @@ describe('buildEdit', () => {
     }
   })
 
+  it('plays the whole human review at real speed, from the pause to the approval', () => {
+    const segments = buildEdit(
+      timeline([ev(0), ev(10, 'hitl_pause'), ev(20, 'typing_start'), ev(25, 'typing_end'), ev(27, 'approved'), ev(60)], 60),
+    )
+    for (const s of segments) if (s.srcFrom < 27 && s.srcTo > 10) expect(s.speed).toBe(1)
+  })
+
   it('returns contiguous, monotonic segments covering the whole recording', () => {
     const segments = buildEdit(
       timeline([ev(3), ev(9, 'hitl_pause'), ev(10, 'typing_start'), ev(14, 'typing_end'), ev(50)], 60),
