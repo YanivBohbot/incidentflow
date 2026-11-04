@@ -1,8 +1,9 @@
 """Clean up investigations left RUNNING by an API process that stopped mid-run."""
 
 import logging
+from collections.abc import Callable
 
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 from incidentflow.infrastructure.database.investigation_repository import (
     InvestigationRepository,
@@ -16,7 +17,7 @@ INTERRUPTED_RUN_MESSAGE = (
 )
 
 
-def recover_interrupted_investigations(session_factory: sessionmaker[Session]) -> int:
+def recover_interrupted_investigations(session_factory: Callable[[], Session]) -> int:
     """Fail every RUNNING investigation at startup.
 
     An investigation runs inside one API request. When the process starts, no request can be in
