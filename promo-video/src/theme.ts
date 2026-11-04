@@ -1,14 +1,14 @@
-/** Colors match the IncidentFlow dashboard so animated scenes and footage read as one piece. */
+/** Colors match the IncidentFlow dashboard sidebar (navy) and primary buttons (teal) so animated scenes and footage read as one piece. */
 export const theme = {
-  bg: '#0d1117',
-  panel: '#161b22',
-  border: '#30363d',
-  text: '#e6edf3',
-  dim: '#8b949e',
-  accent: '#58a6ff',
-  ok: '#3fb950',
-  warn: '#d29922',
-  danger: '#ff7b72',
+  bg: '#0b1730',
+  panel: '#111f3b',
+  border: '#243858',
+  text: '#f8fbff',
+  dim: '#94a3b8',
+  accent: '#2dd4bf',
+  ok: '#34d399',
+  warn: '#f5b942',
+  danger: '#f87171',
   font: 'Inter, "Segoe UI", system-ui, sans-serif',
 } as const
 
