@@ -2,6 +2,11 @@
 
 **AI-powered incident investigation with a durable, human-supervised multi-agent workflow.**
 
+<p align="center">
+  <img src="docs/assets/incidentflow-demo.gif" width="900"
+       alt="IncidentFlow demo: past investigations across services, a live multi-agent trace, the operator approving a Jira write, and the created Jira ticket">
+</p>
+
 IncidentFlow helps on-call engineers investigate production incidents. An operator declares an
 incident ("Payment API has returned HTTP 500 errors since this morning"), and a supervisor agent
 delegates the investigation to specialist sub-agents that gather evidence from Jira, MongoDB

@@ -1,6 +1,6 @@
 import { OffthreadVideo, Sequence, interpolate, staticFile, useCurrentFrame, useVideoConfig } from 'remotion'
-import { srcToOutFrame } from '../timeline/buildEdit'
-import { type CameraKey, lerpBox } from '../timeline/camera'
+import { type CameraKey, keysForSegments, lerpBox } from '../timeline/camera'
+import { activeMasks } from '../timeline/masks'
 import type { Segment, Timeline } from '../timeline/types'
 
 const SRC_W = 1920
@@ -43,7 +43,7 @@ export function Footage({ timeline, segments, keys, width, height }: Props) {
   const placed = placeSegments(segments, fps)
   const { srcNow } = sourceAt(placed, frame, fps)
 
-  const timed = keys.map((k) => ({ ...k, at: srcToOutFrame(segments, k.atSrc, fps) ?? 0 }))
+  const timed = keysForSegments(keys, segments, fps)
   const active = timed.filter((k) => k.at <= frame)
   const target = active.at(-1) ?? timed[0]
   const previous = active.at(-2) ?? target
@@ -54,7 +54,7 @@ export function Footage({ timeline, segments, keys, width, height }: Props) {
   })
   const view = lerpBox(previous.box, target.box, move)
   const zoom = width / view.width
-  const masks = timeline.masks.filter((m) => srcNow >= m.from && srcNow <= m.to)
+  const masks = activeMasks(timeline, srcNow)
 
   return (
     <div style={{ position: 'relative', width, height, overflow: 'hidden', background: '#f5f7fb' }}>

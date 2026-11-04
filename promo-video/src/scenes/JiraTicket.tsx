@@ -32,45 +32,49 @@ function viewAt(frame: number): Box {
   return lerpBox(previous.box, target.box, p)
 }
 
+/** The screenshot, framed by the camera at `frame`, with personal details masked. */
+export function JiraShot({ width, height, frame }: { width: number; height: number; frame: number }) {
+  const view = viewAt(frame)
+  const zoom = width / view.width
+  return (
+    <div style={{ position: 'relative', width, height, overflow: 'hidden', background: '#fff' }}>
+      <div
+        style={{
+          position: 'absolute',
+          width: JIRA_SHOT.width,
+          height: JIRA_SHOT.height,
+          transformOrigin: 'top left',
+          transform: `translate(${-view.x * zoom}px, ${-view.y * zoom}px) scale(${zoom})`,
+        }}
+      >
+        <Img src={staticFile(JIRA_SHOT.file)} style={{ width: JIRA_SHOT.width, height: JIRA_SHOT.height }} />
+        {MASKS.map((m, i) => (
+          <div
+            key={i}
+            style={{
+              position: 'absolute',
+              left: m.x,
+              top: m.y,
+              width: m.width,
+              height: m.height,
+              background: 'rgb(203,213,225)',
+              borderRadius: 6,
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /** The real Jira ticket the approved tool call created. */
 export function JiraTicket() {
   const frame = useCurrentFrame()
-  const view = viewAt(frame)
-  const zoom = FRAME.width / view.width
   return (
     <Stage
       heading={`Created in Jira — ${JIRA_SHOT.key}`}
       windowTitle={`Jira — ${JIRA_SHOT.key}`}
-      window={
-        <div style={{ position: 'relative', width: FRAME.width, height: FRAME_H, overflow: 'hidden', background: '#fff' }}>
-          <div
-            style={{
-              position: 'absolute',
-              width: JIRA_SHOT.width,
-              height: JIRA_SHOT.height,
-              transformOrigin: 'top left',
-              transform: `translate(${-view.x * zoom}px, ${-view.y * zoom}px) scale(${zoom})`,
-            }}
-          >
-            <Img src={staticFile(JIRA_SHOT.file)} style={{ width: JIRA_SHOT.width, height: JIRA_SHOT.height }} />
-            {MASKS.map((m, i) => (
-              <div
-                key={i}
-                style={{
-                  position: 'absolute',
-                  left: m.x,
-                  top: m.y,
-                  width: m.width,
-                  height: m.height,
-                  backdropFilter: 'blur(8px)',
-                  background: 'rgb(203,213,225)',
-                  borderRadius: 6,
-                }}
-              />
-            ))}
-          </div>
-        </div>
-      }
+      window={<JiraShot width={FRAME.width} height={FRAME_H} frame={frame} />}
       column={
         <>
           <Card

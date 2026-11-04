@@ -1,4 +1,5 @@
-import type { Box, Timeline } from './types'
+import { srcToOutFrame } from './buildEdit'
+import type { Box, Segment, Timeline } from './types'
 
 /**
  * Regions of the 1920×1080 recording worth filling the frame with (16:9 each). Measured on the
@@ -17,6 +18,9 @@ export const FOCUS = {
 
 export type CameraKey = { atSrc: number; box: Box }
 
+/** The app switches to the review panel up to ~1 s before the script's 1 s polling sees the pause. */
+export const PAUSE_CAMERA_LEAD_S = 0.8
+
 /** Where the camera looks, from the moments of the take. */
 export function cameraKeyframes(timeline: Timeline): CameraKey[] {
   const first = (kind: string, label?: string) =>
@@ -30,7 +34,7 @@ export function cameraKeyframes(timeline: Timeline): CameraKey[] {
   const typing = first('typing_start')
   const approved = first('approved')
   if (launch) keys.push({ atSrc: launch.t + 1.5, box: FOCUS.trace })
-  if (pause) keys.push({ atSrc: pause.t + 1, box: FOCUS.reviewTop })
+  if (pause) keys.push({ atSrc: pause.t - PAUSE_CAMERA_LEAD_S, box: FOCUS.reviewTop })
   if (draft) keys.push({ atSrc: draft.t, box: FOCUS.reviewDraft })
   if (typing) keys.push({ atSrc: typing.t - 0.8, box: FOCUS.reviewBottom })
   if (approved) keys.push({ atSrc: approved.t + 2.5, box: FOCUS.trace })
@@ -41,4 +45,22 @@ export function cameraKeyframes(timeline: Timeline): CameraKey[] {
 export function lerpBox(a: Box, b: Box, p: number): Box {
   const mix = (x: number, y: number) => x + (y - x) * p
   return { x: mix(a.x, b.x), y: mix(a.y, b.y), width: mix(a.width, b.width), height: mix(a.height, b.height) }
+}
+
+/**
+ * Camera keys placed on the output frames of an excerpt. The excerpt opens on the last key set
+ * before it; keys after it are dropped.
+ */
+export function keysForSegments(
+  keys: CameraKey[],
+  segments: Segment[],
+  fps: number,
+): (CameraKey & { at: number })[] {
+  const start = segments[0]?.srcFrom ?? 0
+  const end = segments.at(-1)?.srcTo ?? 0
+  const before = keys.filter((k) => k.atSrc <= start).at(-1)
+  const inside = keys
+    .filter((k) => k.atSrc > start && k.atSrc <= end)
+    .map((k) => ({ ...k, at: srcToOutFrame(segments, k.atSrc, fps) ?? 0 }))
+  return [...(before ? [{ ...before, at: 0 }] : []), ...inside]
 }

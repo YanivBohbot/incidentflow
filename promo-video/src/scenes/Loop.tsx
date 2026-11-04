@@ -1,48 +1,40 @@
-import { AbsoluteFill, Series } from 'remotion'
+import { AbsoluteFill, Series, useCurrentFrame } from 'remotion'
 import { Footage, placeSegments, placedDuration } from '../components/Footage'
+import { loopPlan } from '../content/loop'
 import { tourEdit } from '../content/tour'
-import { buildEdit } from '../timeline/buildEdit'
 import { cameraKeyframes } from '../timeline/camera'
 import type { Segment, Timeline } from '../timeline/types'
+import { JiraShot } from './JiraTicket'
 
-const LOOP_TOUR_SPEED = 4
-const LOOP_TAKE_SPEED_UP = 2
+const frames = (segments: Segment[], fps: number) => placedDuration(placeSegments(segments, fps))
 
-/** Segments restricted to [from, to] of the source, each sped up by `factor`. */
-export function sliceSegments(segments: Segment[], from: number, to: number, factor: number): Segment[] {
-  return segments
-    .map((s) => ({ srcFrom: Math.max(s.srcFrom, from), srcTo: Math.min(s.srcTo, to), speed: s.speed * factor }))
-    .filter((s) => s.srcTo > s.srcFrom)
+export function loopDurationFrames(tour: Timeline, take: Timeline, fps: number): number {
+  const plan = loopPlan(tour, take)
+  return frames(plan.tour, fps) + frames(plan.trace, fps) + frames(plan.review, fps) + plan.jiraFrames
 }
 
-function loopParts(tour: Timeline, take: Timeline) {
-  const tourSegments = tourEdit(tour).segments.map((s) => ({ ...s, speed: LOOP_TOUR_SPEED }))
-  const launch = take.events.find((e) => e.kind === 'click' && e.label === 'Launch investigation')?.t ?? 0
-  const approved = take.events.find((e) => e.kind === 'approved')?.t ?? take.durationS
-  const takeSegments = sliceSegments(buildEdit(take), launch, approved + 2, LOOP_TAKE_SPEED_UP)
-  return { tourSegments, takeSegments }
+function JiraPart() {
+  return <JiraShot width={1920} height={1080} frame={useCurrentFrame()} />
 }
 
-export function loopDurationFrames(tour: Timeline, take: Timeline, fps: number) {
-  const { tourSegments, takeSegments } = loopParts(tour, take)
-  return {
-    tour: placedDuration(placeSegments(tourSegments, fps)),
-    take: placedDuration(placeSegments(takeSegments, fps)),
-  }
-}
-
-/** README loop: the app only — the scenario tour, then the live trace up to the approval. */
+/** README loop, app only: scenario tour → live trace → human approval → the Jira ticket. */
 export function Loop({ tour, take, fps }: { tour: Timeline; take: Timeline; fps: number }) {
-  const { tourSegments, takeSegments } = loopParts(tour, take)
-  const durations = loopDurationFrames(tour, take, fps)
+  const plan = loopPlan(tour, take)
+  const keys = cameraKeyframes(take)
   return (
     <AbsoluteFill style={{ background: '#f5f7fb' }}>
       <Series>
-        <Series.Sequence durationInFrames={durations.tour}>
-          <Footage timeline={tour} segments={tourSegments} keys={tourEdit(tour).keys} width={1920} height={1080} />
+        <Series.Sequence durationInFrames={frames(plan.tour, fps)}>
+          <Footage timeline={tour} segments={plan.tour} keys={tourEdit(tour).keys} width={1920} height={1080} />
         </Series.Sequence>
-        <Series.Sequence durationInFrames={durations.take}>
-          <Footage timeline={take} segments={takeSegments} keys={cameraKeyframes(take)} width={1920} height={1080} />
+        <Series.Sequence durationInFrames={frames(plan.trace, fps)}>
+          <Footage timeline={take} segments={plan.trace} keys={keys} width={1920} height={1080} />
+        </Series.Sequence>
+        <Series.Sequence durationInFrames={frames(plan.review, fps)}>
+          <Footage timeline={take} segments={plan.review} keys={keys} width={1920} height={1080} />
+        </Series.Sequence>
+        <Series.Sequence durationInFrames={plan.jiraFrames}>
+          <JiraPart />
         </Series.Sequence>
       </Series>
     </AbsoluteFill>

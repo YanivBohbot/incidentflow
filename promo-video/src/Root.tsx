@@ -86,7 +86,7 @@ const loopMetadata: CalculateMetadataFunction<LoopProps> = async () => {
   const { take, tour } = await loadTakes()
   if (!take || !tour) throw new Error('public/take.* and public/tour.* are required for the loop')
   const d = loopDurationFrames(tour, take, FPS)
-  return { durationInFrames: d.tour + d.take, props: { take, tour } }
+  return { durationInFrames: d, props: { take, tour } }
 }
 
 const common = { fps: FPS, width: WIDTH, height: HEIGHT }

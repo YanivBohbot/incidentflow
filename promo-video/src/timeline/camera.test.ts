@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FOCUS, cameraKeyframes } from './camera'
+import { FOCUS, cameraKeyframes, keysForSegments } from './camera'
 import type { Timeline, TimelineEvent } from './types'
 
 const ev = (t: number, kind: TimelineEvent['kind'], label: string = kind): TimelineEvent => ({ t, kind, label })
@@ -30,6 +30,10 @@ describe('cameraKeyframes', () => {
     ])
   })
 
+  it('frames the review panel at the pause itself, when the app switches to it', () => {
+    expect(cameraKeyframes(full).find((k) => k.box === FOCUS.reviewTop)!.atSrc).toBeCloseTo(49.2)
+  })
+
   it('uses only the first HITL pause', () => {
     expect(cameraKeyframes(full).filter((k) => k.box === FOCUS.reviewTop)).toHaveLength(1)
   })
@@ -42,5 +46,22 @@ describe('cameraKeyframes', () => {
 
   it('stays on the full app when nothing was launched (rehearsal)', () => {
     expect(cameraKeyframes(timeline([ev(4, 'page', 'Incidents')])).map((k) => k.box)).toEqual([FOCUS.full])
+  })
+})
+
+describe('keysForSegments', () => {
+  const keys = [
+    { atSrc: 0, box: FOCUS.full },
+    { atSrc: 10, box: FOCUS.trace },
+    { atSrc: 51, box: FOCUS.reviewTop },
+    { atSrc: 56, box: FOCUS.reviewBottom },
+    { atSrc: 92, box: FOCUS.trace },
+  ]
+  const review = [{ srcFrom: 50, srcTo: 90, speed: 1 }]
+
+  it('starts on the last key before the excerpt and drops keys after it', () => {
+    const placed = keysForSegments(keys, review, 30)
+    expect(placed.map((k) => k.box)).toEqual([FOCUS.trace, FOCUS.reviewTop, FOCUS.reviewBottom])
+    expect(placed.map((k) => k.at)).toEqual([0, 30, 180])
   })
 })
