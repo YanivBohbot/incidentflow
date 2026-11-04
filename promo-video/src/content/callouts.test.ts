@@ -48,6 +48,12 @@ describe('calloutsFor', () => {
     expect(titles.some((t) => t.startsWith('Measured'))).toBe(false)
   })
 
+  it('explains the drafted ticket when the take shows it', () => {
+    const withDraft = [...base, ev(55, 'page', 'Review draft')]
+    expect(calloutsFor(timeline(withDraft)).map((c) => c.title)).toContain('The drafted Jira ticket')
+    expect(calloutsFor(timeline(base)).map((c) => c.title)).not.toContain('The drafted Jira ticket')
+  })
+
   it('returns callouts sorted by source time', () => {
     const times = calloutsFor(timeline(base)).map((c) => c.atSrc)
     expect(times).toEqual([...times].sort((a, b) => a - b))

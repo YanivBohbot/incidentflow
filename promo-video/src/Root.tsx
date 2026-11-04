@@ -2,6 +2,7 @@ import { Composition, type CalculateMetadataFunction, Series, staticFile } from 
 import { Demo, demoDurationFrames } from './scenes/Demo'
 import { EndCard } from './scenes/EndCard'
 import { Hook } from './scenes/Hook'
+import { JiraTicket, jiraDurationFrames } from './scenes/JiraTicket'
 import { Loop, loopDurationFrames } from './scenes/Loop'
 import { Problem } from './scenes/Problem'
 import { Recap } from './scenes/Recap'
@@ -13,7 +14,12 @@ export const SCENE_FRAMES = { hook: 6 * FPS, problem: 9 * FPS, recap: 8 * FPS, e
 const scenesTotal = Object.values(SCENE_FRAMES).reduce((a, b) => a + b, 0)
 
 type Takes = { take: Timeline | null; tour: Timeline | null }
-type PromoProps = Takes & { demoFrames: number; tourFrames: number }
+type PromoProps = Takes & {
+  jira: Timeline | null
+  demoFrames: number
+  jiraFrames: number
+  tourFrames: number
+}
 
 async function loadTimeline(name: string, recording: string): Promise<Timeline | null> {
   const response = await fetch(staticFile(name))
@@ -28,7 +34,7 @@ const loadTakes = async (): Promise<Takes> => ({
   tour: await loadTimeline('tour.timeline.json', 'tour.webm'),
 })
 
-const Promo = ({ take, tour, demoFrames, tourFrames }: PromoProps) => (
+const Promo = ({ take, tour, jira, demoFrames, jiraFrames, tourFrames }: PromoProps) => (
   <Series>
     <Series.Sequence durationInFrames={SCENE_FRAMES.hook}>
       <Hook durationInFrames={SCENE_FRAMES.hook} />
@@ -39,6 +45,11 @@ const Promo = ({ take, tour, demoFrames, tourFrames }: PromoProps) => (
     {take && (
       <Series.Sequence durationInFrames={demoFrames}>
         <Demo timeline={take} />
+      </Series.Sequence>
+    )}
+    {jira && (
+      <Series.Sequence durationInFrames={jiraFrames}>
+        <JiraTicket timeline={jira} />
       </Series.Sequence>
     )}
     {tour && (
@@ -57,11 +68,13 @@ const Promo = ({ take, tour, demoFrames, tourFrames }: PromoProps) => (
 
 const promoMetadata: CalculateMetadataFunction<PromoProps> = async () => {
   const { take, tour } = await loadTakes()
+  const jira = await loadTimeline('jira.timeline.json', 'jira.webm')
   const demoFrames = take ? demoDurationFrames(take, FPS) : 0
+  const jiraFrames = jira ? jiraDurationFrames(jira, FPS) : 0
   const tourFrames = tour ? tourDurationFrames(tour, FPS) : 0
   return {
-    durationInFrames: scenesTotal + demoFrames + tourFrames,
-    props: { take, tour, demoFrames, tourFrames },
+    durationInFrames: scenesTotal + demoFrames + jiraFrames + tourFrames,
+    props: { take, tour, jira, demoFrames, jiraFrames, tourFrames },
   }
 }
 
@@ -84,7 +97,7 @@ export const Root = () => (
       id="IncidentFlowPromo"
       component={Promo}
       durationInFrames={scenesTotal}
-      defaultProps={{ take: null, tour: null, demoFrames: 0, tourFrames: 0 }}
+      defaultProps={{ take: null, tour: null, jira: null, demoFrames: 0, jiraFrames: 0, tourFrames: 0 }}
       calculateMetadata={promoMetadata}
       {...common}
     />

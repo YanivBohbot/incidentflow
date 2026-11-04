@@ -12,17 +12,19 @@ describe('cameraKeyframes', () => {
     ev(4, 'page', 'Incidents'),
     ev(9, 'click', 'Launch investigation'),
     ev(50, 'hitl_pause'),
-    ev(53, 'typing_start'),
+    ev(52, 'page', 'Review draft'),
+    ev(56, 'typing_start'),
     ev(60, 'approved'),
     ev(70, 'hitl_pause'),
     ev(80, 'completed'),
   ])
 
-  it('starts on the full app, then follows trace, approval panel, typing, and back to the trace', () => {
+  it('starts on the full app, then follows trace, request, draft, typing, and back to the trace', () => {
     expect(cameraKeyframes(full).map((k) => k.box)).toEqual([
       FOCUS.full,
       FOCUS.trace,
       FOCUS.reviewTop,
+      FOCUS.reviewDraft,
       FOCUS.reviewBottom,
       FOCUS.trace,
     ])

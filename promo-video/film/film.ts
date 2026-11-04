@@ -128,17 +128,30 @@ async function main() {
         const panel = page.locator('.human-review-panel').first()
         await panel.waitFor({ timeout: 20000 })
         rec.mark('page', 'Approvals')
-        await sleep(2500)
-        const holdMasks = async (seconds: number) => {
+        // Mask only identifying values (the Jira cloudId), re-measured after every scroll.
+        const maskFor = async (seconds: number) => {
           const t = rec.now()
-          for (const box of await sensitiveBoxes(page, '[aria-label="Fixed Jira target"]')) {
-            rec.masks.push({ from: t - 0.3, to: t + seconds, box })
-          }
+          for (const box of await sensitiveBoxes(page)) rec.masks.push({ from: t - 0.3, to: t + seconds, box })
         }
-        await holdMasks(30)
+        const showTop = async (selector: string) => {
+          await page.evaluate(
+            `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({ block: 'start' })`,
+          )
+          await sleep(400)
+        }
+        // 1. The request: createJiraIssue, project SAM1, issue type.
+        await showTop('.human-review-panel')
+        await maskFor(4)
+        await sleep(3500)
+        // 2. The drafted ticket: summary and description written by the agents.
+        rec.mark('page', 'Review draft')
+        await showTop('.human-review-panel .review-field')
+        await maskFor(5)
+        await sleep(4500)
+        // 3. The operator note and the decision buttons.
         const note = panel.locator('.proposal-actions textarea')
-        await note.scrollIntoViewIfNeeded()
-        await holdMasks(30)
+        await showTop('.human-review-panel .proposal-actions')
+        await maskFor(15)
         await note.click()
         rec.mark('typing_start', 'Operator types approval note')
         await note.pressSequentially(APPROVAL_NOTE, { delay: 45 })

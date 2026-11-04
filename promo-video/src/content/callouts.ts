@@ -75,6 +75,18 @@ export function calloutsFor(timeline: Timeline): Callout[] {
     }
   }
 
+  const draft = events.find((e) => e.kind === 'page' && e.label === 'Review draft')
+  if (draft) {
+    callouts.push({
+      atSrc: draft.t,
+      holdS: 6,
+      title: 'The drafted Jira ticket',
+      body: "Project, type, priority, summary and description come from the specialists' evidence. The operator can edit them before approving.",
+      chips: ['createJiraIssue'],
+      tone: 'warn',
+    })
+  }
+
   const completed = events.find((e) => e.kind === 'completed')
   if (completed && pause) {
     callouts.push({

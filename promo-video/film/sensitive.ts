@@ -1,8 +1,11 @@
 import type { Page } from 'playwright'
 import type { Box } from '../src/timeline/types'
 
-/** Text that must never be readable on screen: Jira site names and 12-digit AWS account IDs. */
-const SENSITIVE = String.raw`atlassian\.net|\b\d{12}\b`
+/**
+ * Text that must never be readable on screen: Jira site names, 12-digit AWS account IDs, and
+ * UUIDs (the Jira cloudId identifies the site).
+ */
+const SENSITIVE = String.raw`atlassian\.net|\b\d{12}\b|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`
 
 // Plain string on purpose: tsx/esbuild adds a `__name` helper to compiled functions, which does
 // not exist in the page, so a function passed to page.evaluate would throw there.
