@@ -20,6 +20,8 @@ export type TimelineEvent = {
   tool?: string
   /** For trace_step: the API trace kind (delegation, subagent_call, finding, report…). */
   stepKind?: string
+  /** Delegation tools a past investigation used (scenario tour). */
+  agents?: string[]
   box?: Box
 }
 

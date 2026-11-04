@@ -7,7 +7,8 @@
     "render": "remotion render src/index.ts IncidentFlowPromo out/incidentflow-promo.mp4",
     "gif": "remotion render src/index.ts IncidentFlowLoop out/incidentflow-loop.gif --codec=gif --every-nth-frame=2 --scale=0.5",
     "film": "tsx film/film.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "tour": "tsx film/tour.ts"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.540",

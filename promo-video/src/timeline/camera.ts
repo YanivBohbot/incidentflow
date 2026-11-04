@@ -10,6 +10,7 @@ export const FOCUS = {
   trace: { x: 760, y: 420, width: 1150, height: 647 },
   reviewTop: { x: 330, y: 0, width: 1040, height: 585 },
   reviewBottom: { x: 330, y: 470, width: 1040, height: 585 },
+  report: { x: 795, y: 10, width: 1040, height: 585 },
 } satisfies Record<string, Box>
 
 export type CameraKey = { atSrc: number; box: Box }

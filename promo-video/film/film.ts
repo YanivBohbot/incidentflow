@@ -7,8 +7,9 @@
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { chromium, type Page } from 'playwright'
-import type { Box, Timeline, TimelineEvent } from '../src/timeline/types'
+import type { Timeline, TimelineEvent } from '../src/timeline/types'
 import { API_URL, WEB_URL, preflight } from './preflight'
+import { sensitiveBoxes } from './sensitive'
 import { diffTraceSteps, type TraceStep } from './traceWatcher'
 
 const INCIDENT_TITLE = '[Demo] Refund requests failing (refund-service)'
@@ -16,9 +17,6 @@ const APPROVAL_NOTE =
   'Verified against CloudWatch, GitHub PR #7 and the runbook. Approved — create the SAM1 task.'
 const TIMEOUT_S = 300
 const SIZE = { width: 1920, height: 1080 }
-/** Text that must never be readable on screen: Jira site names and 12-digit AWS account IDs. */
-const SENSITIVE = String.raw`atlassian\.net|\b\d{12}\b`
-
 const args = process.argv.slice(2)
 const take = Number(args[args.indexOf('--take') + 1] ?? 0)
 const rehearse = args.includes('--rehearse')
@@ -41,30 +39,6 @@ class Recorder {
     this.events.push({ t: this.now(), kind, label, ...extra })
     console.log(`${this.now().toFixed(1).padStart(6)}s  ${kind.padEnd(12)} ${label}`)
   }
-}
-
-/** Boxes of visible leaf elements whose text looks sensitive (see SENSITIVE). */
-// Plain string on purpose: tsx/esbuild adds a `__name` helper to compiled functions, which does
-// not exist in the page, so a function passed to page.evaluate would throw there.
-const SENSITIVE_BOXES_JS = `(args) => {
-  const re = new RegExp(args.pattern)
-  const boxes = []
-  const push = (el) => {
-    const r = el.getBoundingClientRect()
-    if (r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight) {
-      boxes.push({ x: r.x - 6, y: r.y - 4, width: r.width + 12, height: r.height + 8 })
-    }
-  }
-  if (args.extra) document.querySelectorAll(args.extra).forEach(push)
-  document.querySelectorAll('body *').forEach((el) => {
-    if (el.children.length === 0 && re.test(el.textContent || '')) push(el)
-  })
-  return boxes
-}`
-
-async function sensitiveBoxes(page: Page, extraSelector?: string): Promise<Box[]> {
-  const args = JSON.stringify({ pattern: SENSITIVE, extra: extraSelector ?? null })
-  return page.evaluate(`(${SENSITIVE_BOXES_JS})(${args})`) as Promise<Box[]>
 }
 
 async function nav(page: Page, rec: Recorder, label: string) {
