@@ -22,6 +22,14 @@ export async function preflight(): Promise<void> {
 
   if (!(await reachable(WEB_URL))) problems.push(`Web app not reachable at ${WEB_URL}.`)
 
+  const investigations = await fetch(`${API_URL}/api/investigations`)
+    .then((r) => r.json() as Promise<{ lifecycle: string }[]>)
+    .catch(() => [])
+  const busy = investigations.filter((i) => ['RUNNING', 'AWAITING_HUMAN_REVIEW'].includes(i.lifecycle))
+  if (busy.length > 0) {
+    problems.push(`${busy.length} investigation(s) still running or awaiting review — resolve them first.`)
+  }
+
   if (!(await reachable(MONGO_MCP_URL))) {
     problems.push(`MongoDB MCP not answering at ${MONGO_MCP_URL} — start mongodb-mcp-server (see README).`)
   }

@@ -44,25 +44,27 @@ class Recorder {
 }
 
 /** Boxes of visible leaf elements whose text looks sensitive (see SENSITIVE). */
+// Plain string on purpose: tsx/esbuild adds a `__name` helper to compiled functions, which does
+// not exist in the page, so a function passed to page.evaluate would throw there.
+const SENSITIVE_BOXES_JS = `(args) => {
+  const re = new RegExp(args.pattern)
+  const boxes = []
+  const push = (el) => {
+    const r = el.getBoundingClientRect()
+    if (r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight) {
+      boxes.push({ x: r.x - 6, y: r.y - 4, width: r.width + 12, height: r.height + 8 })
+    }
+  }
+  if (args.extra) document.querySelectorAll(args.extra).forEach(push)
+  document.querySelectorAll('body *').forEach((el) => {
+    if (el.children.length === 0 && re.test(el.textContent || '')) push(el)
+  })
+  return boxes
+}`
+
 async function sensitiveBoxes(page: Page, extraSelector?: string): Promise<Box[]> {
-  return page.evaluate(
-    ({ pattern, extra }) => {
-      const re = new RegExp(pattern)
-      const boxes: { x: number; y: number; width: number; height: number }[] = []
-      const push = (el: Element) => {
-        const r = el.getBoundingClientRect()
-        if (r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < window.innerHeight) {
-          boxes.push({ x: r.x - 6, y: r.y - 4, width: r.width + 12, height: r.height + 8 })
-        }
-      }
-      if (extra) document.querySelectorAll(extra).forEach(push)
-      document.querySelectorAll('body *').forEach((el) => {
-        if (el.children.length === 0 && re.test(el.textContent ?? '')) push(el)
-      })
-      return boxes
-    },
-    { pattern: SENSITIVE, extra: extraSelector },
-  )
+  const args = JSON.stringify({ pattern: SENSITIVE, extra: extraSelector ?? null })
+  return page.evaluate(`(${SENSITIVE_BOXES_JS})(${args})`) as Promise<Box[]>
 }
 
 async function nav(page: Page, rec: Recorder, label: string) {
