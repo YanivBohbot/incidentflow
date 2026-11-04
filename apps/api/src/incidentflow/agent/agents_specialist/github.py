@@ -50,16 +50,22 @@ def validate_github_repository_arguments(
     return None
 
 
-def with_branch_defaults(
+def with_branch_scope(
     tool_name: str, arguments: dict[str, Any], branch: str | None
 ) -> dict[str, Any]:
-    """Target the configured branch when the model leaves the branch argument out."""
+    """Scope commit and pull-request reads to the configured branch, whatever the model sent.
+
+    The model cannot see the repository layout, so it guesses scoping arguments (base=main,
+    path=<service name>). A wrong guess returns an empty list, and with one call per tool the
+    agent cannot recover. The application owns the scope: branch, all PR states, no path.
+    """
     if not branch:
         return arguments
-    if tool_name == "list_commits" and not arguments.get("sha"):
-        return {**arguments, "sha": branch}
-    if tool_name == "list_pull_requests" and not arguments.get("base"):
-        return {**arguments, "base": branch, "state": arguments.get("state") or "all"}
+    if tool_name == "list_commits":
+        scoped = {key: value for key, value in arguments.items() if key != "path"}
+        return {**scoped, "sha": branch}
+    if tool_name == "list_pull_requests":
+        return {**arguments, "base": branch, "state": "all"}
     return arguments
 
 
@@ -81,8 +87,8 @@ class GitHubRepositoryAllowlistMiddleware(AgentMiddleware):
         )
         if error:
             return ToolMessage(content=error, tool_call_id=call["id"], status="error")
-        arguments = with_branch_defaults(call["name"], call["args"], self.branch)
-        if arguments is call["args"]:
+        arguments = with_branch_scope(call["name"], call["args"], self.branch)
+        if arguments == call["args"]:
             return request
         return request.override(tool_call={**call, "args": arguments})
 

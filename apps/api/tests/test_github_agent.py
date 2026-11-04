@@ -214,11 +214,25 @@ def test_a_blocked_extra_call_produces_exactly_one_tool_message(monkeypatch) -> 
     assert result["structured_response"].summary == "No change."
 
 
-def test_branch_defaults_target_the_configured_branch_without_overriding_the_model() -> None:
-    from incidentflow.agent.agents_specialist.github import with_branch_defaults
+def test_branch_scope_targets_the_configured_branch() -> None:
+    from incidentflow.agent.agents_specialist.github import with_branch_scope
 
     branch = "demo/incident-scenarios"
-    assert with_branch_defaults("list_commits", {"owner": "a"}, branch)["sha"] == branch
-    assert with_branch_defaults("list_commits", {"sha": "main"}, branch)["sha"] == "main"
-    assert with_branch_defaults("list_pull_requests", {}, branch) == {"base": branch, "state": "all"}
-    assert with_branch_defaults("list_commits", {"owner": "a"}, None) == {"owner": "a"}
+    assert with_branch_scope("list_commits", {"owner": "a"}, branch)["sha"] == branch
+    assert with_branch_scope("list_pull_requests", {}, branch) == {"base": branch, "state": "all"}
+    assert with_branch_scope("list_commits", {"owner": "a"}, None) == {"owner": "a"}
+
+
+def test_branch_scope_overrides_scoping_arguments_guessed_by_the_model() -> None:
+    """Live run: the model sent base=main (default is master) and path=refund-service (the
+    code lives under demo-services/), both returned [], and the one-call limit left the
+    agent with no evidence."""
+    from incidentflow.agent.agents_specialist.github import with_branch_scope
+
+    branch = "demo/incident-scenarios"
+    commits = with_branch_scope(
+        "list_commits", {"owner": "a", "sha": "main", "path": "refund-service"}, branch
+    )
+    assert commits == {"owner": "a", "sha": branch}
+    pulls = with_branch_scope("list_pull_requests", {"base": "main", "state": "closed"}, branch)
+    assert pulls == {"base": branch, "state": "all"}
