@@ -83,7 +83,10 @@ Builder's calls (owner may override):
   no changes to the API or web app code for the video's sake.
 - Filming: Playwright, Chromium, 1920×1080 viewport, `recordVideo`, against the Docker stack
   (`http://127.0.0.1:5173`). Scenario: `refund-service` (High). The script performs the real
-  clicks, including *Approve* at the HITL pause.
+  clicks, including *Approve* at the HITL pause. Owner decision: the script plays the operator —
+  it types a visible approval note in the review panel (typed at human speed so it reads on
+  screen) and clicks *Approve*.
+- The incident list is filmed as-is, including older test incidents (owner: it looks more real).
 - **Sync**: while filming, the script writes a timeline JSON (e.g. `{event: "subagent_start",
   name: "ask_github", t: 41.2}`, HITL pause, approve, Jira created) by observing the DOM and/or
   polling `GET /api/investigations/{id}/trace`. Remotion reads this JSON to place overlays and to
@@ -126,8 +129,11 @@ Builder's calls (owner may override):
   target site in the HITL panel). The Jira site name counts as sensitive. The UI itself is never
   altered. A frame check of the final render is still mandatory.
 - **Take budget**: rehearse the script against a local fixture/rehearsal run first; at most 3
-  live takes. Re-run `seed_cloudwatch_scenarios.py` right before filming so data is fresh. Jira
-  issues created by discarded takes are deleted after filming.
+  live takes. Re-run `seed_cloudwatch_scenarios.py` right before filming so data is fresh, and
+  start the stack with `docker-compose.cloudwatch.yml` plus the MongoDB MCP server (port 3000).
+  Jira tickets are not deleted by default (owner). Note: the Jira agent skips creation when a
+  SAM1 ticket for the same service was updated in the last 7 days, so the filmed scenario must
+  have no such ticket at take time or the HITL pause will not happen.
 - If the run also hits the report-level review pause, the script approves it and the edit cuts it.
 
 ## Left to the builder
