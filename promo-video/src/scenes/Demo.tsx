@@ -11,13 +11,14 @@ import {
 import { Chip } from '../components/ui'
 import { type Callout, calloutsFor } from '../content/callouts'
 import { buildEdit, srcToOutFrame } from '../timeline/buildEdit'
+import { cameraKeyframes, lerpBox } from '../timeline/camera'
 import type { Segment, Timeline } from '../timeline/types'
 import { theme } from '../theme'
 
 const SRC_W = 1920
 const FRAME = { x: 60, y: 120, width: 1300 }
-const SCALE = FRAME.width / SRC_W
-const FRAME_H = Math.round(1080 * SCALE)
+const FRAME_H = Math.round((1080 * FRAME.width) / SRC_W)
+const CAMERA_MOVE_FRAMES = 24
 const TITLE_BAR = 36
 const COLUMN = { x: FRAME.x + FRAME.width + 40, width: 1920 - (FRAME.x + FRAME.width + 40) - 50 }
 
@@ -94,6 +95,18 @@ export function Demo({ timeline }: { timeline: Timeline }) {
 
   const masks = timeline.masks.filter((m) => srcNow >= m.from && srcNow <= m.to)
 
+  const keys = cameraKeyframes(timeline).map((k) => ({ ...k, at: srcToOutFrame(segments, k.atSrc, fps) ?? 0 }))
+  const active = keys.filter((k) => k.at <= frame)
+  const target = active.at(-1) ?? keys[0]
+  const previous = active.at(-2) ?? target
+  const move = interpolate(frame, [target.at, target.at + CAMERA_MOVE_FRAMES], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+    easing: (t) => t * t * (3 - 2 * t),
+  })
+  const view = lerpBox(previous.box, target.box, move)
+  const zoom = FRAME.width / view.width
+
   return (
     <AbsoluteFill style={{ background: theme.bg, fontFamily: theme.font, color: theme.text }}>
       <div
@@ -147,34 +160,44 @@ export function Demo({ timeline }: { timeline: Timeline }) {
           ))}
           <span style={{ marginLeft: 12 }}>IncidentFlow — Operations console</span>
         </div>
-        <div style={{ position: 'relative', width: FRAME.width, height: FRAME_H }}>
-          {placed.map((s) => (
-            <Sequence key={s.from} from={s.from} durationInFrames={s.duration} layout="none">
-              <OffthreadVideo
-                src={staticFile(timeline.recording)}
-                startFrom={Math.round(s.srcFrom * fps)}
-                endAt={Math.round(s.srcTo * fps)}
-                playbackRate={s.speed}
-                muted
-                style={{ width: FRAME.width, height: FRAME_H, position: 'absolute', inset: 0 }}
+        <div style={{ position: 'relative', width: FRAME.width, height: FRAME_H, overflow: 'hidden' }}>
+          <div
+            style={{
+              position: 'absolute',
+              width: SRC_W,
+              height: 1080,
+              transformOrigin: 'top left',
+              transform: `translate(${-view.x * zoom}px, ${-view.y * zoom}px) scale(${zoom})`,
+            }}
+          >
+            {placed.map((s) => (
+              <Sequence key={s.from} from={s.from} durationInFrames={s.duration} layout="none">
+                <OffthreadVideo
+                  src={staticFile(timeline.recording)}
+                  startFrom={Math.round(s.srcFrom * fps)}
+                  endAt={Math.round(s.srcTo * fps)}
+                  playbackRate={s.speed}
+                  muted
+                  style={{ width: SRC_W, height: 1080, position: 'absolute', inset: 0 }}
+                />
+              </Sequence>
+            ))}
+            {masks.map((m, i) => (
+              <div
+                key={i}
+                style={{
+                  position: 'absolute',
+                  left: m.box.x,
+                  top: m.box.y,
+                  width: m.box.width,
+                  height: m.box.height,
+                  backdropFilter: 'blur(12px)',
+                  background: 'rgba(148,163,184,.35)',
+                  borderRadius: 6,
+                }}
               />
-            </Sequence>
-          ))}
-          {masks.map((m, i) => (
-            <div
-              key={i}
-              style={{
-                position: 'absolute',
-                left: m.box.x * SCALE,
-                top: m.box.y * SCALE,
-                width: m.box.width * SCALE,
-                height: m.box.height * SCALE,
-                backdropFilter: 'blur(9px)',
-                background: 'rgba(148,163,184,.35)',
-                borderRadius: 6,
-              }}
-            />
-          ))}
+            ))}
+          </div>
         </div>
       </div>
 
