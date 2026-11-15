@@ -1,4 +1,6 @@
+import asyncio
 from collections.abc import Iterator
+from uuid import UUID
 
 from agent_fakes import ApprovalGatedSupervisor
 from fastapi import FastAPI
@@ -23,10 +25,13 @@ from incidentflow.api.routes.incidents import (
 )
 from incidentflow.api.routes.investigations import (
     get_investigation_service,
+    get_job_queue,
 )
 from incidentflow.api.routes.investigations import (
     router as investigations_router,
 )
+from incidentflow.application.jobs.processor import InvestigationJobProcessor
+from incidentflow.application.jobs.queue import InMemoryJobQueue
 from incidentflow.application.services.incident_service import IncidentService
 from incidentflow.application.services.investigation_service import InvestigationService
 from incidentflow.infrastructure.database.base import Base
@@ -36,18 +41,12 @@ from incidentflow.infrastructure.database.investigation_repository import (
 )
 
 
-class CompletedWorkflow:
+class CompletedSupervisor:
     def __init__(self, report: InvestigationReport) -> None:
         self.report = report
 
-    async def ainvoke(self, payload: dict, config: dict) -> dict:
-        assert payload["incident_request"] == "Investigate Payment API HTTP 500 errors."
-        assert config["configurable"]["thread_id"].startswith("investigation:")
-        return {
-            "investigation_lifecycle": "completed",
-            "report": self.report,
-            "errors": [],
-        }
+    async def ainvoke(self, _payload: dict, *, config: dict) -> dict:
+        return {"structured_response": self.report}
 
 
 def test_incident_investigation_and_persisted_report_round_trip() -> None:
@@ -74,6 +73,13 @@ def test_incident_investigation_and_persisted_report_round_trip() -> None:
         limitations=["This test uses a deterministic workflow double."],
         confidence=0.8,
     )
+    queue = InMemoryJobQueue()
+    workflow = build_investigation_workflow(
+        CompletedSupervisor(report), checkpointer=InMemorySaver()
+    )
+    processor = InvestigationJobProcessor(
+        session_factory, workflow, lease_seconds=60, max_attempts=3
+    )
 
     def incident_service() -> Iterator[IncidentService]:
         with session_factory() as session:
@@ -82,9 +88,7 @@ def test_incident_investigation_and_persisted_report_round_trip() -> None:
     def investigation_service() -> Iterator[InvestigationService]:
         with session_factory() as session:
             yield InvestigationService(
-                InvestigationRepository(session),
-                IncidentRepository(session),
-                CompletedWorkflow(report),
+                InvestigationRepository(session), IncidentRepository(session), queue, workflow
             )
 
     app = FastAPI()
@@ -92,6 +96,7 @@ def test_incident_investigation_and_persisted_report_round_trip() -> None:
     app.include_router(investigations_router, prefix="/api")
     app.dependency_overrides[get_incident_service] = incident_service
     app.dependency_overrides[get_investigation_service] = investigation_service
+    app.dependency_overrides[get_job_queue] = lambda: queue
 
     with TestClient(app) as client:
         incident_response = client.post(
@@ -112,14 +117,27 @@ def test_incident_investigation_and_persisted_report_round_trip() -> None:
                 "incident_request": "Investigate Payment API HTTP 500 errors.",
             },
         )
-        assert investigation_response.status_code == 201
+        assert investigation_response.status_code == 202
         created = investigation_response.json()
-        assert created["lifecycle"] == "COMPLETED"
-        assert created["report"]["evidence"][0]["source_status"] == "live"
+        assert created["lifecycle"] == "PENDING"
+        assert queue.sent == [UUID(created["id"])]
+
+        duplicate = client.post(
+            "/api/investigations",
+            json={
+                "incident_id": incident_id,
+                "incident_request": "Investigate Payment API HTTP 500 errors.",
+            },
+        )
+        assert duplicate.status_code == 409
+
+        asyncio.run(processor.process(UUID(created["id"])))
 
         persisted_response = client.get(f"/api/investigations/{created['id']}")
         assert persisted_response.status_code == 200
-        assert persisted_response.json()["report"] == created["report"]
+        persisted = persisted_response.json()
+        assert persisted["lifecycle"] == "COMPLETED"
+        assert persisted["report"]["evidence"][0]["source_status"] == "live"
 
 
 def test_api_resumes_a_manual_supervisor_call_after_jira_hitl() -> None:
@@ -135,6 +153,10 @@ def test_api_resumes_a_manual_supervisor_call_after_jira_hitl() -> None:
         InvestigationReport(summary="A Jira issue was considered after the review.", confidence=0.8)
     )
     workflow = build_investigation_workflow(supervisor, checkpointer=InMemorySaver())
+    queue = InMemoryJobQueue()
+    processor = InvestigationJobProcessor(
+        session_factory, workflow, lease_seconds=60, max_attempts=3
+    )
 
     def incident_service() -> Iterator[IncidentService]:
         with session_factory() as session:
@@ -143,7 +165,7 @@ def test_api_resumes_a_manual_supervisor_call_after_jira_hitl() -> None:
     def investigation_service() -> Iterator[InvestigationService]:
         with session_factory() as session:
             yield InvestigationService(
-                InvestigationRepository(session), IncidentRepository(session), workflow
+                InvestigationRepository(session), IncidentRepository(session), queue, workflow
             )
 
     app = FastAPI()
@@ -151,6 +173,7 @@ def test_api_resumes_a_manual_supervisor_call_after_jira_hitl() -> None:
     app.include_router(investigations_router, prefix="/api")
     app.dependency_overrides[get_incident_service] = incident_service
     app.dependency_overrides[get_investigation_service] = investigation_service
+    app.dependency_overrides[get_job_queue] = lambda: queue
 
     with TestClient(app) as client:
         incident_response = client.post(
@@ -168,8 +191,11 @@ def test_api_resumes_a_manual_supervisor_call_after_jira_hitl() -> None:
                 "incident_request": "Investigate Payment API HTTP 500 errors.",
             },
         )
-        assert investigation_response.status_code == 201
-        paused = investigation_response.json()
+        assert investigation_response.status_code == 202
+        started = investigation_response.json()
+        assert started["lifecycle"] == "PENDING"
+        asyncio.run(processor.process(UUID(started["id"])))
+        paused = client.get(f"/api/investigations/{started['id']}").json()
         assert paused["lifecycle"] == "AWAITING_HUMAN_REVIEW"
         assert paused["human_review"]["review_type"] == "JIRA_WRITE"
         assert paused["human_review"]["draft"]["tool_name"] == "createJiraIssue"
@@ -178,7 +204,10 @@ def test_api_resumes_a_manual_supervisor_call_after_jira_hitl() -> None:
             f"/api/investigations/{paused['id']}/human-review/resolve",
             json={"decision": "APPROVE", "actor": "test-operator"},
         )
-        assert resumed_response.status_code == 200
-        assert resumed_response.json()["lifecycle"] == "COMPLETED"
+        assert resumed_response.status_code == 202
+        assert resumed_response.json()["lifecycle"] == "PENDING"
+        asyncio.run(processor.process(UUID(paused["id"])))
+        completed = client.get(f"/api/investigations/{paused['id']}").json()
+        assert completed["lifecycle"] == "COMPLETED"
 
     assert supervisor.resume_values == [{"decisions": [{"type": "approve"}]}]

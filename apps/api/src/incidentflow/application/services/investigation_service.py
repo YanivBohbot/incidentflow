@@ -2,14 +2,9 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from langgraph.types import Command
-
-from incidentflow.agent.orchestration.policies.human_review import (
-    jira_tool_resume_payload,
-    jira_write_review_from_interrupt,
-)
+from incidentflow.agent.orchestration.policies.human_review import jira_tool_resume_payload
 from incidentflow.agent.orchestration.trace import build_investigation_trace
-from incidentflow.core.operational_metrics import OperationalMetrics
+from incidentflow.application.jobs.queue import JobQueue
 from incidentflow.domain.human_review.models import HumanReviewDecision, HumanReviewType
 from incidentflow.domain.investigations.models import (
     Investigation,
@@ -25,31 +20,53 @@ from incidentflow.infrastructure.database.investigation_repository import (
 
 logger = logging.getLogger(__name__)
 
+ACTIVE_LIFECYCLES = (InvestigationLifecycle.PENDING, InvestigationLifecycle.RUNNING)
+
+
+class InvestigationAlreadyActiveError(Exception):
+    """The incident already has a PENDING or RUNNING investigation."""
+
+    def __init__(self, investigation_id: UUID) -> None:
+        super().__init__(f"Investigation {investigation_id} is already active.")
+        self.investigation_id = investigation_id
+
 
 class InvestigationService:
     def __init__(
         self,
         repository: InvestigationRepository,
         incident_repository: IncidentRepository,
+        queue: JobQueue,
         workflow: Any,
-        metrics: OperationalMetrics | None = None,
     ) -> None:
         self.repository = repository
         self.incident_repository = incident_repository
+        self.queue = queue
         self.workflow = workflow
-        self.metrics = metrics
 
-    async def start_investigation(self, data: InvestigationStart) -> Investigation | None:
+    def start_investigation(self, data: InvestigationStart) -> Investigation | None:
         incident = self.incident_repository.get_incident(data.incident_id)
         if incident is None:
             return None
-        return await self.run_investigation(
+        if self.repository.has_active_investigation(incident.id):
+            active = next(
+                (
+                    item
+                    for item in self.repository.list_for_incident(incident.id)
+                    if item.lifecycle in ACTIVE_LIFECYCLES
+                ),
+                None,
+            )
+            raise InvestigationAlreadyActiveError(active.id if active else incident.id)
+        investigation = self.repository.create_investigation(
             InvestigationCreate(
                 incident_id=incident.id,
                 incident_request=data.incident_request,
                 incident_business_status=incident.status.value,
             )
         )
+        self._enqueue(investigation.id)
+        return investigation
 
     def get_investigation(self, investigation_id: UUID) -> Investigation | None:
         return self.repository.get_investigation(investigation_id)
@@ -57,72 +74,43 @@ class InvestigationService:
     def list_investigations(self) -> list[Investigation]:
         return self.repository.list_investigations()
 
-    async def run_investigation(self, data: InvestigationCreate) -> Investigation:
-        investigation = self.repository.create_investigation(data)
-        running = self.repository.mark_running(investigation.id)
-
-        if running is None:
-            raise RuntimeError("Created investigation could not be marked as running.")
-
-        try:
-            result = await self.workflow.ainvoke(
-                {
-                    "incident_request": running.incident_request,
-                    "incident_business_status": running.incident_business_status,
-                },
-                config={"configurable": {"thread_id": running.workflow_thread_id}},
-            )
-        except Exception:
-            logger.exception("Investigation workflow failed before producing a result")
-            failed = self.repository.fail_investigation(
-                running.id,
-                "Workflow execution failed before a report was produced.",
-            )
-            if failed is None:
-                raise RuntimeError("Failed investigation could not be persisted.")
-            self._record_lifecycle(failed.lifecycle.value)
-            return failed
-
-        return self._persist_workflow_result(running, result)
-
-    async def resume_human_review(
+    def request_human_review_resume(
         self, investigation_id: UUID, decision: HumanReviewDecision
     ) -> Investigation | None:
-        """Resume the paused graph with the same durable investigation thread."""
+        """Store the operator decision, move the row back to PENDING, and enqueue the job."""
         investigation = self.repository.get_investigation(investigation_id)
-        if investigation is None or investigation.lifecycle is not InvestigationLifecycle.AWAITING_HUMAN_REVIEW:
-            return None
-        resume_payload = decision.model_dump(mode="json")
         if (
-            investigation.human_review
-            and investigation.human_review.review_type is HumanReviewType.JIRA_WRITE
+            investigation is None
+            or investigation.lifecycle is not InvestigationLifecycle.AWAITING_HUMAN_REVIEW
         ):
-            # Raises HumanReviewEditError before the graph resumes, so a rejected edit
-            # leaves the investigation paused and the operator can correct it.
-            resume_payload = jira_tool_resume_payload(decision, investigation.human_review)
-        try:
-            # Record the pause and the decision in the graph state so the trace can show them.
-            review_event = {
-                "review": investigation.human_review.model_dump(mode="json")
-                if investigation.human_review
-                else None,
+            return None
+        review = investigation.human_review
+        command_resume = decision.model_dump(mode="json")
+        if review and review.review_type is HumanReviewType.JIRA_WRITE:
+            # Raises HumanReviewEditError before any write, so a rejected edit leaves the
+            # investigation paused and the operator can correct it.
+            command_resume = jira_tool_resume_payload(decision, review)
+        payload = {
+            "command_resume": command_resume,
+            "review_event": {
+                "review": review.model_dump(mode="json") if review else None,
                 "decision": decision.model_dump(mode="json"),
-            }
-            result = await self.workflow.ainvoke(
-                Command(resume=resume_payload, update={"review_events": [review_event]}),
-                config={"configurable": {"thread_id": investigation.workflow_thread_id}},
-            )
+            },
+            "review_type": review.review_type.value if review else None,
+            "decision": decision.decision.value,
+        }
+        resumed = self.repository.request_resume(investigation_id, payload)
+        if resumed is None:
+            return None
+        self._enqueue(resumed.id)
+        return resumed
+
+    def _enqueue(self, investigation_id: UUID) -> None:
+        """Send the job after the commit; a failed send is repaired by the sweeper."""
+        try:
+            self.queue.send(investigation_id)
         except Exception:
-            logger.exception("Investigation workflow failed while resuming human review")
-            failed = self.repository.fail_investigation(
-                investigation.id,
-                "Workflow execution failed while processing the human review decision.",
-            )
-            if failed is None:
-                raise RuntimeError("Failed investigation could not be persisted.")
-            self._record_lifecycle(failed.lifecycle.value)
-            return failed
-        return self._persist_workflow_result(investigation, result)
+            logger.exception("Could not enqueue investigation job; the sweeper will re-send it")
 
     async def get_investigation_trace(
         self, investigation_id: UUID
@@ -170,35 +158,3 @@ class InvestigationService:
             elif depth == 1:
                 runs.append((checkpoint.checkpoint.get("ts", ""), messages))
         return supervisor, [messages for _ts, messages in sorted(runs, key=lambda run: run[0])]
-
-    def _persist_workflow_result(self, investigation: Investigation, result: dict) -> Investigation:
-        """Persist a completed, paused, or failed graph result as product lifecycle state."""
-        report = result.get("report")
-        review = result.get("human_review")
-        interrupts = result.get("__interrupt__")
-        if interrupts and review is None:
-            review = jira_write_review_from_interrupt(interrupts[0].value)
-        if interrupts and review is not None:
-            awaiting = self.repository.mark_awaiting_human_review(investigation.id, report, review)
-            if awaiting is None:
-                raise RuntimeError("Paused investigation could not be persisted.")
-            self._record_lifecycle(awaiting.lifecycle.value)
-            return awaiting
-        if result.get("investigation_lifecycle") == "completed" and report is not None:
-            completed = self.repository.complete_investigation(investigation.id, report)
-            if completed is None:
-                raise RuntimeError("Completed investigation could not be persisted.")
-            self._record_lifecycle(completed.lifecycle.value)
-            return completed
-
-        error_message = "; ".join(result.get("errors", [])) or "Investigation workflow failed."
-        failed = self.repository.fail_investigation(investigation.id, error_message)
-        if failed is None:
-            raise RuntimeError("Failed investigation could not be persisted.")
-        self._record_lifecycle(failed.lifecycle.value)
-        return failed
-
-    def _record_lifecycle(self, lifecycle: str) -> None:
-        """Record the final durable state without collecting incident content."""
-        if self.metrics is not None:
-            self.metrics.record_investigation(lifecycle)

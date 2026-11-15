@@ -5,8 +5,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from incidentflow.application.jobs.queue import JobQueue
 from incidentflow.application.services.incident_lesson_service import IncidentLessonService
-from incidentflow.application.services.investigation_service import InvestigationService
+from incidentflow.application.services.investigation_service import (
+    InvestigationAlreadyActiveError,
+    InvestigationService,
+)
 from incidentflow.core.config import get_settings
 from incidentflow.domain.human_review.models import HumanReviewDecision
 from incidentflow.domain.investigations.models import (
@@ -28,16 +32,22 @@ def get_db_session() -> Iterator[Session]:
         yield session
 
 
+def get_job_queue(request: Request) -> JobQueue:
+    """Return the lifespan-independent job queue built at app creation."""
+    return request.app.state.job_queue
+
+
 def get_investigation_service(
     request: Request,
     session: Annotated[Session, Depends(get_db_session)],
+    queue: Annotated[JobQueue, Depends(get_job_queue)],
 ) -> InvestigationService:
-    """Build the investigation service with the lifespan-owned workflow."""
+    """Build the investigation service; the workflow is used only to read traces."""
     return InvestigationService(
         InvestigationRepository(session),
         IncidentRepository(session),
+        queue,
         request.app.state.investigation_workflow,
-        request.app.state.operational_metrics,
     )
 
 
@@ -69,12 +79,18 @@ def list_investigations(service: InvestigationServiceDep) -> list[Investigation]
     return service.list_investigations()
 
 
-@router.post("", response_model=Investigation, status_code=status.HTTP_201_CREATED)
-async def start_investigation(
+@router.post("", response_model=Investigation, status_code=status.HTTP_202_ACCEPTED)
+def start_investigation(
     data: InvestigationStart, service: InvestigationServiceDep
 ) -> Investigation:
-    """Start an investigation for an existing incident and return its final record."""
-    investigation = await service.start_investigation(data)
+    """Queue an investigation for an existing incident and return its PENDING record."""
+    try:
+        investigation = service.start_investigation(data)
+    except InvestigationAlreadyActiveError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An investigation is already running for this incident.",
+        ) from error
     if investigation is None:
         raise HTTPException(status_code=404, detail="Incident not found")
     return investigation
@@ -100,15 +116,19 @@ async def get_investigation_trace(
     return trace
 
 
-@router.post("/{investigation_id}/human-review/resolve", response_model=Investigation)
-async def resolve_human_review(
+@router.post(
+    "/{investigation_id}/human-review/resolve",
+    response_model=Investigation,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def resolve_human_review(
     investigation_id: UUID,
     decision: HumanReviewDecision,
     service: InvestigationServiceDep,
 ) -> Investigation:
-    """Resume one paused investigation with an explicit authenticated-operator decision."""
+    """Queue the resume of one paused investigation with an explicit authenticated-operator decision."""
     try:
-        investigation = await service.resume_human_review(investigation_id, decision)
+        investigation = service.request_human_review_resume(investigation_id, decision)
     except ValueError as error:  # an edit outside the permitted Jira fields
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)

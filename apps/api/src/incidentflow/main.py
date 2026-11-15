@@ -14,8 +14,12 @@ from incidentflow.api.routes.incidents import (
     router as incidents_router,
 )
 from incidentflow.api.routes.investigations import router as investigations_router
-from incidentflow.core.config import get_settings
+from incidentflow.application.jobs.queue import JobQueue
+from incidentflow.core.config import Settings, get_settings
 from incidentflow.core.operational_metrics import OperationalMetrics
+from incidentflow.infrastructure.database.investigation_repository import InvestigationRepository
+from incidentflow.infrastructure.database.session import SessionLocal
+from incidentflow.infrastructure.queue.sqs import build_job_queue
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +29,7 @@ def create_app(
     checkpointer_context_factory: Callable[[str], AbstractAsyncContextManager[Any]] = (
         open_postgres_checkpointer
     ),
+    job_queue_factory: Callable[[Settings], JobQueue] = build_job_queue,
 ) -> FastAPI:
     settings = get_settings()
     operational_metrics = OperationalMetrics()
@@ -33,10 +38,11 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with checkpointer_context_factory(settings.checkpoint_database_url) as checkpointer:
             await checkpointer.setup()
+            app.state.job_queue = job_queue_factory(settings)
             supervisor = build_investigation_supervisor()
             app.state.investigation_workflow = build_investigation_workflow(
                 supervisor,
-                checkpointer=checkpointer
+                checkpointer=checkpointer,
             )
             yield
 
@@ -78,7 +84,9 @@ def create_app(
     @app.get("/operations/metrics", tags=["System"])
     def metrics() -> dict[str, dict[str, int]]:
         """Expose aggregated counters without request payloads or external evidence."""
-        return operational_metrics.snapshot()
+        with SessionLocal() as session:
+            by_lifecycle = InvestigationRepository(session).count_by_lifecycle()
+        return {**operational_metrics.snapshot(), "investigations_by_lifecycle": by_lifecycle}
 
     app.include_router(
         incidents_router,
