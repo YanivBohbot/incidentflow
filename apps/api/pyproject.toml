@@ -34,6 +34,7 @@ dependencies = [
     "langchain-text-splitters",
     "langsmith>=0.4,<1.0",
     "pypdf",
+    "boto3>=1.35,<2.0",
 
 ]
 

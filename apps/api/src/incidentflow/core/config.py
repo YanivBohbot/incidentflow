@@ -67,6 +67,13 @@ class Settings(BaseSettings):
     # PostgreSQL
     database_url: str
     langgraph_checkpoint_database_url: str | None = None
+    # Investigation job queue (SQS; ElasticMQ locally via SQS_ENDPOINT_URL)
+    job_queue_url: str = "http://localhost:9324/000000000000/incidentflow-investigations"
+    sqs_endpoint_url: str | None = None
+    job_queue_region: str = "us-east-1"
+    worker_concurrency: int = 2
+    job_lease_seconds: int = 300
+    job_max_attempts: int = 3
 
     @property
     def checkpoint_database_url(self) -> str:
