@@ -236,3 +236,30 @@ def test_sweeper_resends_stale_rows(session_factory: sessionmaker[Session]) -> N
     assert resent == 2
     assert set(queue.sent) == {old_pending, expired}
     assert fresh not in queue.sent
+
+
+async def test_worker_backs_off_after_receive_failure() -> None:
+    calls: list[int] = []
+
+    class FailingQueue(InMemoryJobQueue):
+        def receive(self, *, max_messages: int, wait_seconds: int):  # type: ignore[override]
+            calls.append(1)
+            raise RuntimeError("no credentials")
+
+    stop = asyncio.Event()
+    task = asyncio.create_task(
+        run_worker(
+            FailingQueue(),
+            FakeProcessor(),  # type: ignore[arg-type]
+            concurrency=1,
+            lease_seconds=300,
+            stop=stop,
+            poll_wait_seconds=0,
+            receive_error_backoff_seconds=0.2,
+        )
+    )
+    await asyncio.sleep(0.5)
+    stop.set()
+    await asyncio.wait_for(task, timeout=1)
+
+    assert 1 <= len(calls) <= 4

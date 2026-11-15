@@ -8,6 +8,7 @@ import asyncio
 import contextlib
 import logging
 import signal
+import sys
 import time
 from collections.abc import Callable
 from typing import Any
@@ -59,6 +60,7 @@ async def run_worker(
     sweep: Callable[[], int] | None = None,
     sweep_interval_seconds: float = 60,
     poll_wait_seconds: int = 10,
+    receive_error_backoff_seconds: float = 5,
 ) -> None:
     """Run up to ``concurrency`` jobs at once until ``stop`` is set, then drain in-flight jobs."""
     in_flight: set[asyncio.Task[None]] = set()
@@ -113,7 +115,9 @@ async def run_worker(
                 )
             except Exception:
                 logger.exception("Receiving from the job queue failed.")
-                jobs = []
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(stop.wait(), timeout=receive_error_backoff_seconds)
+                continue
             if not jobs:
                 with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(stop.wait(), timeout=IDLE_PAUSE_SECONDS)
@@ -123,6 +127,9 @@ async def run_worker(
                 in_flight.add(task)
                 task.add_done_callback(in_flight.discard)
     finally:
+        # Graceful stop drains in-flight jobs. If the process is killed mid-drain, those jobs are
+        # abandoned mid-run and messages fetched by a cancelled receive stay invisible until their
+        # visibility timeout; recovery relies on lease expiry, the sweeper, and SQS redelivery.
         if in_flight:
             await asyncio.gather(*list(in_flight), return_exceptions=True)
 
@@ -172,8 +179,10 @@ async def main() -> None:
 
 def run() -> None:
     logging.basicConfig(level=logging.INFO)
+    # psycopg's async driver cannot run on Windows' default ProactorEventLoop.
+    loop_factory = asyncio.SelectorEventLoop if sys.platform == "win32" else None
     with contextlib.suppress(KeyboardInterrupt):
-        asyncio.run(main())
+        asyncio.run(main(), loop_factory=loop_factory)
 
 
 if __name__ == "__main__":
