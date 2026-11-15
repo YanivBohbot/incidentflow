@@ -19,6 +19,11 @@ RUNNING = InvestigationLifecycle.RUNNING
 PENDING = InvestigationLifecycle.PENDING
 
 
+def _lease_expired(now: datetime):
+    """NULL lease (RUNNING rows from before the lease columns existed) counts as expired."""
+    return or_(InvestigationORM.lease_expires_at.is_(None), InvestigationORM.lease_expires_at < now)
+
+
 @dataclass(frozen=True)
 class ClaimedInvestigation:
     """A successful claim: the fencing token every later write must present."""
@@ -127,7 +132,7 @@ class InvestigationRepository:
             InvestigationORM.lifecycle == PENDING,
             and_(
                 InvestigationORM.lifecycle == RUNNING,
-                InvestigationORM.lease_expires_at < now,
+                _lease_expired(now),
             ),
         )
         claimed = self._apply(
@@ -247,7 +252,7 @@ class InvestigationRepository:
                 ),
                 and_(
                     InvestigationORM.lifecycle == RUNNING,
-                    InvestigationORM.lease_expires_at < now,
+                    _lease_expired(now),
                 ),
             )
         )

@@ -186,3 +186,20 @@ def test_count_by_lifecycle(session: Session, incident_id: UUID) -> None:
         repo.complete_investigation(inv_id, REPORT, lease_token=claimed.lease_token)
 
     assert repo.count_by_lifecycle() == {"PENDING": 1, "COMPLETED": 2}
+
+
+def test_running_row_with_null_lease_is_claimable_and_stale(
+    session: Session, incident_id: UUID
+) -> None:
+    repo = InvestigationRepository(session)
+    inv_id = _create(repo, incident_id)
+    session.execute(
+        update(InvestigationORM)
+        .where(InvestigationORM.id == inv_id)
+        .values(lifecycle=RUNNING, lease_token=None, lease_expires_at=None)
+    )
+    session.commit()
+
+    assert repo.stale_investigation_ids(pending_older_than_seconds=120) == [inv_id]
+    claimed = repo.claim(inv_id, lease_seconds=300)
+    assert claimed is not None and claimed.attempt_count == 1
