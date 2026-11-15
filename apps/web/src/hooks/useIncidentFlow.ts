@@ -19,6 +19,20 @@ const LIFECYCLE_MESSAGES: Record<string, string> = {
   FAILED: 'Investigation finished with a failure.',
 }
 
+const isNewer = (candidate: Investigation, current: Investigation) =>
+  Date.parse(candidate.updated_at) > Date.parse(current.updated_at)
+
+/** Merge a fetched list into the current one; a row is replaced only by a newer snapshot. */
+function mergeInvestigations(current: Investigation[], incoming: Investigation[], local: Investigation[]) {
+  const byId = new Map(current.map((item) => [item.id, item]))
+  const merged = incoming.map((item) => {
+    const existing = byId.get(item.id)
+    return existing && !isNewer(item, existing) ? existing : item
+  })
+  const known = new Set(merged.map((item) => item.id))
+  return [...local.filter((item) => !known.has(item.id)), ...merged]
+}
+
 export function useIncidentFlow() {
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [investigations, setInvestigations] = useState<Investigation[]>([])
@@ -32,11 +46,19 @@ export function useIncidentFlow() {
   const [statusMessage, setStatusMessage] = useState('Connecting to the IncidentFlow API…')
   const [isLoading, setIsLoading] = useState(true)
 
+  // Rows added locally (just queued) that an in-flight list response may predate.
+  const localRows = useRef(new Map<string, Investigation>())
+  const applyList = useCallback((items: Investigation[]) => {
+    const local = [...localRows.current.values()]
+    for (const item of items) localRows.current.delete(item.id)
+    setInvestigations((current) => mergeInvestigations(current, items, local))
+  }, [])
+
   const refreshInvestigations = useCallback(async () => {
     const items = await api.listInvestigations()
-    setInvestigations(items)
+    applyList(items)
     return items
-  }, [])
+  }, [applyList])
 
   const refreshWorkspace = useCallback(async () => {
     const [incidentItems, investigationItems, readinessSnapshot, metricsSnapshot] = await Promise.all([
@@ -46,11 +68,11 @@ export function useIncidentFlow() {
       api.getOperationalMetrics(),
     ])
     setIncidents(incidentItems)
-    setInvestigations(investigationItems)
+    applyList(investigationItems)
     setReadiness(readinessSnapshot)
     setOperationalMetrics(metricsSnapshot)
     return { incidentItems, investigationItems }
-  }, [])
+  }, [applyList])
 
   useEffect(() => {
     let isCurrent = true
@@ -114,6 +136,7 @@ export function useIncidentFlow() {
       // (below) follows it through RUNNING to its final or paused state.
       const investigation = await api.startInvestigation(selectedIncident.id, selectedIncident.description)
       setSelectedInvestigation(investigation)
+      localRows.current.set(investigation.id, investigation)
       setInvestigations((items) => [investigation, ...items.filter((item) => item.id !== investigation.id)])
       setStatusMessage('Investigation queued…')
       return investigation
@@ -137,8 +160,8 @@ export function useIncidentFlow() {
     setStatusMessage('Resuming the investigation with the operator decision…')
     try {
       const updated = await api.resolveHumanReview(investigation.id, decision)
-      setInvestigations((items) => items.map((item) => item.id === updated.id ? updated : item))
-      setSelectedInvestigation((item) => item?.id === updated.id ? updated : item)
+      setInvestigations((items) => items.map((item) => item.id === updated.id && isNewer(updated, item) ? updated : item))
+      setSelectedInvestigation((item) => item?.id === updated.id && isNewer(updated, item) ? updated : item)
       setStatusMessage(updated.lifecycle === 'PENDING' ? 'Investigation queued…' : (LIFECYCLE_MESSAGES[updated.lifecycle] ?? `Investigation is ${updated.lifecycle.toLowerCase()}.`))
       await refreshWorkspace()
       return updated
@@ -152,7 +175,7 @@ export function useIncidentFlow() {
   useEffect(() => {
     setSelectedInvestigation((current) => {
       const fresh = current && investigations.find((item) => item.id === current.id)
-      return fresh && fresh.updated_at !== current.updated_at ? fresh : current
+      return fresh && isNewer(fresh, current) ? fresh : current
     })
   }, [investigations])
 
@@ -177,8 +200,8 @@ export function useIncidentFlow() {
     if (!activeId) return
     const timer = window.setInterval(() => {
       void api.getInvestigation(activeId).then((fresh) => {
-        setInvestigations((items) => items.map((item) => item.id === fresh.id ? fresh : item))
-        setSelectedInvestigation((current) => current?.id === fresh.id ? fresh : current)
+        setInvestigations((items) => items.map((item) => item.id === fresh.id && isNewer(fresh, item) ? fresh : item))
+        setSelectedInvestigation((current) => current?.id === fresh.id && isNewer(fresh, current) ? fresh : current)
       }).catch(() => undefined)
     }, ACTIVE_INVESTIGATION_REFRESH_MS)
     return () => window.clearInterval(timer)

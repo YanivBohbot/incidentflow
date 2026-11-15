@@ -8,9 +8,16 @@ const incident = {
   status: 'OPEN', created_at: '2026-11-15T10:00:00Z', updated_at: '2026-11-15T10:00:00Z',
 } as Incident
 
+const STEP_TIMES: Record<string, string> = {
+  PENDING: '2026-11-15T10:01:00Z',
+  RUNNING: '2026-11-15T10:02:00Z',
+  AWAITING_HUMAN_REVIEW: '2026-11-15T10:03:00Z',
+  COMPLETED: '2026-11-15T10:04:00Z',
+}
+
 const investigation = (lifecycle: string, id = 'inv-1'): Investigation => ({
   id, incident_id: 'inc-1', lifecycle, report: null, human_review: null, error_message: null,
-  created_at: '2026-11-15T10:01:00Z', updated_at: '2026-11-15T10:01:00Z',
+  created_at: '2026-11-15T10:01:00Z', updated_at: STEP_TIMES[lifecycle] ?? STEP_TIMES.PENDING,
 })
 
 type Handler = (init?: RequestInit) => { status: number, body: unknown }
@@ -89,6 +96,35 @@ describe('useIncidentFlow queued investigations', () => {
     current = investigation('COMPLETED')
     await waitFor(() => expect(result.current.statusMessage).toBe('Investigation completed.'), { timeout: 4000 })
     expect(result.current.selectedInvestigation?.lifecycle).toBe('COMPLETED')
+  })
+
+  it('does not rewind the selection when an older workspace snapshot arrives late', async () => {
+    let listed: Investigation[] = []
+    const { result } = await setup({
+      ...baseRoutes(() => listed),
+      'POST /api/investigations': () => ({ status: 202, body: investigation('PENDING') }),
+      'GET /api/investigations/inv-1': () => ({ status: 200, body: investigation('COMPLETED') }),
+    })
+    await act(async () => { await result.current.startInvestigation() })
+    await waitFor(() => expect(result.current.statusMessage).toBe('Investigation completed.'), { timeout: 4000 })
+
+    listed = [investigation('RUNNING')]
+    await act(async () => { await result.current.refreshWorkspace() })
+
+    expect(result.current.selectedInvestigation?.lifecycle).toBe('COMPLETED')
+    expect(result.current.investigations[0].lifecycle).toBe('COMPLETED')
+    expect(result.current.statusMessage).toBe('Investigation completed.')
+  })
+
+  it('keeps a just-queued row when a list response predates it', async () => {
+    const { result } = await setup({
+      ...baseRoutes(() => []),
+      'POST /api/investigations': () => ({ status: 202, body: investigation('PENDING') }),
+    })
+    await act(async () => { await result.current.startInvestigation() })
+    await act(async () => { await result.current.refreshWorkspace() })
+
+    expect(result.current.investigations.map((item) => item.id)).toEqual(['inv-1'])
   })
 
   it('accepts the queued response when resolving a review', async () => {
