@@ -52,7 +52,11 @@ def test_repository_creates_and_completes_an_investigation() -> None:
             limitations=["Sources are simulated."],
             confidence=0.8,
         )
-        completed = repository.complete_investigation(investigation.id, report)
+        claimed = repository.claim(investigation.id, lease_seconds=300)
+        assert claimed is not None
+        completed = repository.complete_investigation(
+            investigation.id, report, lease_token=claimed.lease_token
+        )
 
         assert completed is not None
         assert completed.lifecycle == InvestigationLifecycle.COMPLETED
@@ -87,7 +91,11 @@ def test_repository_persists_a_pending_human_review() -> None:
             evidence_references=["mongodb:event-17"],
         )
 
-        awaiting = repository.mark_awaiting_human_review(investigation.id, report, review)
+        claimed = repository.claim(investigation.id, lease_seconds=300)
+        assert claimed is not None
+        awaiting = repository.mark_awaiting_human_review(
+            investigation.id, report, review, lease_token=claimed.lease_token
+        )
 
         assert awaiting is not None
         assert awaiting.lifecycle is InvestigationLifecycle.AWAITING_HUMAN_REVIEW

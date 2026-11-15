@@ -51,18 +51,12 @@ async def test_app_lifespan_opens_checkpointer_and_shares_workflow(monkeypatch) 
     )
     monkeypatch.setattr(main, "build_investigation_supervisor", lambda: object())
 
-    def fake_recovery() -> int:
-        events.append("recover")
-        return 0
-
     app = main.create_app(
         checkpointer_context_factory=lambda _database_url: FakeCheckpointerContext(),
-        recover_interrupted_investigations=fake_recovery,
     )
     lifespan = app.router.lifespan_context(app)
 
     async with lifespan:
         assert app.state.investigation_workflow is not None
 
-    # Interrupted runs are cleaned up before the workflow accepts new investigations.
-    assert events == ["recover", "open", "setup", "close"]
+    assert events == ["open", "setup", "close"]
