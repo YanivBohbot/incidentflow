@@ -2,10 +2,13 @@ import json
 from uuid import UUID, uuid4
 
 import boto3
+import pytest
 from botocore.stub import Stubber
 
 from incidentflow.application.jobs.queue import InMemoryJobQueue, ReceivedJob
-from incidentflow.infrastructure.queue.sqs import SqsJobQueue
+from incidentflow.core.config import Settings
+from incidentflow.infrastructure.queue import sqs
+from incidentflow.infrastructure.queue.sqs import SqsJobQueue, build_job_queue
 
 QUEUE_URL = "http://localhost:9324/000000000000/incidentflow-investigations"
 
@@ -113,3 +116,74 @@ def test_sqs_receive_skips_malformed_body() -> None:
         assert jobs == [ReceivedJob(investigation_id=valid_id, receipt="good")]
         assert isinstance(jobs[0].investigation_id, UUID)
         stubber.assert_no_pending_responses()
+
+
+AWS_CREDENTIAL_ENV_VARS = (
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "AWS_PROFILE",
+    "AWS_DEFAULT_PROFILE",
+)
+
+
+def _queue_settings(**overrides: object) -> Settings:
+    return Settings(
+        _env_file=None,
+        database_url="sqlite://",
+        openai_api_key="test",
+        **overrides,
+    )
+
+
+@pytest.fixture
+def no_aws_credentials(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    for name in AWS_CREDENTIAL_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(tmp_path / "missing-credentials"))
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(tmp_path / "missing-config"))
+    monkeypatch.setenv("AWS_EC2_METADATA_DISABLED", "true")
+
+
+def test_build_job_queue_with_endpoint_signs_without_aws_env_vars(
+    no_aws_credentials: None,
+) -> None:
+    queue = build_job_queue(_queue_settings(sqs_endpoint_url="http://localhost:9324"))
+
+    assert isinstance(queue, SqsJobQueue)
+    credentials = queue._client._request_signer._credentials
+    assert credentials is not None
+    assert credentials.access_key == "local"
+    assert credentials.secret_key == "local"
+
+
+def test_build_job_queue_without_endpoint_passes_no_explicit_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_client(service_name: str, **kwargs: object) -> object:
+        calls.append({"service_name": service_name, **kwargs})
+        return object()
+
+    monkeypatch.setattr(sqs.boto3, "client", fake_client)
+
+    build_job_queue(_queue_settings(sqs_endpoint_url=None))
+
+    assert len(calls) == 1
+    assert calls[0]["service_name"] == "sqs"
+    assert calls[0].get("endpoint_url") is None
+    assert "aws_access_key_id" not in calls[0]
+    assert "aws_secret_access_key" not in calls[0]
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_empty_sqs_endpoint_url_is_treated_as_unset(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("SQS_ENDPOINT_URL", value)
+
+    settings = _queue_settings()
+
+    assert settings.sqs_endpoint_url is None
+    build_job_queue(settings)

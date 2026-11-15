@@ -60,20 +60,18 @@ dashboard polls until it finishes. Follow it with `docker compose logs -f worker
 ElasticMQ is configured in `infra/elasticmq/elasticmq.conf`: a visibility timeout of 300 seconds
 (matching `JOB_LEASE_SECONDS`) and a dead-letter queue, `incidentflow-investigations-dlq`, after 3
 receives. Queue state is in memory, so it is lost when the container restarts; the worker's
-sweeper re-sends `PENDING` and expired `RUNNING` rows from the database. Compose gives `api` and
-`worker` dummy `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` values (`local`) because boto3 requires
-credentials even for ElasticMQ.
+sweeper re-sends `PENDING` and expired `RUNNING` rows from the database. When
+`SQS_ENDPOINT_URL` is set, the queue client signs with built-in dummy credentials (`local`), so
+no AWS keys are needed for ElasticMQ. Do not export `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`
+for the queue: they are forwarded to the CloudWatch MCP server and override its `AWS_PROFILE`.
 
 ### Running the API and worker on the host
 
 To run `uvicorn` and the worker outside Docker against the Compose queue, start only ElasticMQ and
-export the same variables in each shell (`pydantic-settings` reads `.env` but does not export it,
-and boto3 reads credentials from the process environment):
+point both processes at it (in each shell, or in `apps/api/.env`):
 
 ```powershell
 docker compose up -d elasticmq
-$env:AWS_ACCESS_KEY_ID = "local"
-$env:AWS_SECRET_ACCESS_KEY = "local"
 $env:SQS_ENDPOINT_URL = "http://127.0.0.1:9324"
 $env:JOB_QUEUE_URL = "http://127.0.0.1:9324/000000000000/incidentflow-investigations"
 uvicorn incidentflow.main:app --reload          # shell 1, from apps/api

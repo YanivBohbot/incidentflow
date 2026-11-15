@@ -2,7 +2,7 @@ import os
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -74,6 +74,14 @@ class Settings(BaseSettings):
     worker_concurrency: int = 2
     job_lease_seconds: int = 300
     job_max_attempts: int = 3
+
+    @field_validator("sqs_endpoint_url", mode="before")
+    @classmethod
+    def _blank_endpoint_is_unset(cls, value: object) -> object:
+        """An empty SQS_ENDPOINT_URL (as in .env on AWS) means the real SQS endpoint."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @property
     def checkpoint_database_url(self) -> str:

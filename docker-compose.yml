@@ -51,11 +51,10 @@ services:
       # with GITHUB_PERSONAL_ACCESS_TOKEN (read-only header set by the client).
       GITHUB_MCP_TRANSPORT: http
       GITHUB_MCP_URL: ${GITHUB_MCP_DOCKER_URL:-https://api.githubcopilot.com/mcp/}
-      # Investigation jobs go through ElasticMQ locally; boto3 needs dummy credentials for it.
+      # Investigation jobs go through ElasticMQ locally. The queue client gets its own dummy
+      # credentials; never set AWS_ACCESS_KEY_ID here, or it overrides CloudWatch's profile.
       JOB_QUEUE_URL: http://elasticmq:9324/000000000000/incidentflow-investigations
       SQS_ENDPOINT_URL: http://elasticmq:9324
-      AWS_ACCESS_KEY_ID: local
-      AWS_SECRET_ACCESS_KEY: local
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
@@ -95,11 +94,10 @@ services:
       # with GITHUB_PERSONAL_ACCESS_TOKEN (read-only header set by the client).
       GITHUB_MCP_TRANSPORT: http
       GITHUB_MCP_URL: ${GITHUB_MCP_DOCKER_URL:-https://api.githubcopilot.com/mcp/}
-      # Investigation jobs go through ElasticMQ locally; boto3 needs dummy credentials for it.
+      # Investigation jobs go through ElasticMQ locally. The queue client gets its own dummy
+      # credentials; never set AWS_ACCESS_KEY_ID here, or it overrides CloudWatch's profile.
       JOB_QUEUE_URL: http://elasticmq:9324/000000000000/incidentflow-investigations
       SQS_ENDPOINT_URL: http://elasticmq:9324
-      AWS_ACCESS_KEY_ID: local
-      AWS_SECRET_ACCESS_KEY: local
     command: ["python", "-m", "incidentflow.worker"]
     volumes:
       - ./apps/api/.local/oauth-tokens:/app/.local/oauth-tokens
