@@ -101,6 +101,8 @@ checkpoint state of `workflow_thread_id`:
    but died before persisting it. Do not run anything; persist `AWAITING_HUMAN_REVIEW` from the
    interrupt value in the snapshot, through the same conversion as today
    (`jira_write_review_from_interrupt` or the report-level review).
+5. A checkpoint with no next nodes → the graph already finished but the previous worker died
+   before persisting the result. Do not run anything; persist from the checkpoint's values.
 
 The result is persisted with the existing `_persist_workflow_result` logic, which moves from the
 request path into the worker.
