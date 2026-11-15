@@ -56,7 +56,9 @@ def incident_id(session: Session) -> UUID:
 def _create(repo: InvestigationRepository, incident_id: UUID) -> UUID:
     return repo.create_investigation(
         InvestigationCreate(
-            incident_id=incident_id, incident_request="Investigate.", incident_business_status="OPEN"
+            incident_id=incident_id,
+            incident_request="Investigate.",
+            incident_business_status="OPEN",
         )
     ).id
 
@@ -114,9 +116,7 @@ def test_heartbeat_extends_the_lease(session: Session, incident_id: UUID) -> Non
     assert repo.claim(inv_id, lease_seconds=60, now=t0 + timedelta(seconds=111)) is not None
 
 
-def test_request_resume_requeues_and_resets_attempts(
-    session: Session, incident_id: UUID
-) -> None:
+def test_request_resume_requeues_and_resets_attempts(session: Session, incident_id: UUID) -> None:
     repo = InvestigationRepository(session)
     inv_id = _create(repo, incident_id)
     first = repo.claim(inv_id, lease_seconds=300)

@@ -226,9 +226,7 @@ class InvestigationRepository:
             lease_expires_at=None,
         )
 
-    def request_resume(
-        self, investigation_id: UUID, resume_payload: dict
-    ) -> Investigation | None:
+    def request_resume(self, investigation_id: UUID, resume_payload: dict) -> Investigation | None:
         """Re-queue an investigation waiting on an operator; attempts restart at zero."""
         return self._apply(
             investigation_id,

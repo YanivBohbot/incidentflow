@@ -33,7 +33,7 @@ def get_db_session() -> Iterator[Session]:
 
 
 def get_job_queue(request: Request) -> JobQueue:
-    """Return the lifespan-independent job queue built at app creation."""
+    """Return the job queue built by the app lifespan."""
     return request.app.state.job_queue
 
 

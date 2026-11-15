@@ -27,9 +27,7 @@ def upgrade() -> None:
         "investigations",
         sa.Column("attempt_count", sa.Integer(), nullable=False, server_default="0"),
     )
-    op.add_column(
-        "investigations", sa.Column("pending_resume_payload", sa.JSON(), nullable=True)
-    )
+    op.add_column("investigations", sa.Column("pending_resume_payload", sa.JSON(), nullable=True))
 
 
 def downgrade() -> None:

@@ -118,5 +118,3 @@ class IncidentLessonORM(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
     )
-
-
