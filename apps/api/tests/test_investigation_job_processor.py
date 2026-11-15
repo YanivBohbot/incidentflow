@@ -598,3 +598,26 @@ async def test_nested_agent_death_after_approved_jira_write_is_not_rerun() -> No
     assert failed.lifecycle is InvestigationLifecycle.FAILED
     assert failed.error_message == JIRA_OUTCOME_UNKNOWN_MESSAGE
     assert writes == ["Payment API errors"]
+
+
+@pytest.mark.anyio
+async def test_timeout_error_raised_by_the_workflow_is_a_workflow_failure() -> None:
+    class TimeoutRaisingWorkflow:
+        async def aget_state(self, _config: dict) -> SimpleNamespace:
+            return SimpleNamespace(values={}, next=(), tasks=())
+
+        async def ainvoke(self, _payload: object, _config: dict) -> dict:
+            raise TimeoutError("an HTTP client timed out")
+
+    harness = Harness(ReportingSupervisor())
+    investigation = harness.create()
+    processor = InvestigationJobProcessor(
+        harness.session_factory,
+        TimeoutRaisingWorkflow(),
+        lease_seconds=LEASE_SECONDS,
+        max_attempts=MAX_ATTEMPTS,
+    )
+
+    assert await processor.process(investigation.id) is JobOutcome.FAILED
+    failed = harness.get(investigation.id)
+    assert failed.error_message == "Workflow execution failed before a report was produced."

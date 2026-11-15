@@ -188,23 +188,23 @@ class InvestigationJobProcessor:
     ) -> JobOutcome:
         lease_lost = asyncio.Event()
         heartbeat = asyncio.create_task(self._heartbeat_loop(claimed, keep_alive, lease_lost))
+        # Without a deadline a hung run renews its lease forever and blocks the incident.
+        deadline = asyncio.timeout(self.timeout_seconds)
         try:
-            # Without a deadline a hung run renews its lease forever and blocks the incident.
-            result = await asyncio.wait_for(
-                self.workflow.ainvoke(payload, config), timeout=self.timeout_seconds
-            )
-        except TimeoutError:
-            logger.error("Investigation workflow exceeded %s seconds", self.timeout_seconds)
-            if lease_lost.is_set():
-                return JobOutcome.DROPPED
-            # The approved write may have run before the hang; its outcome is unknown.
-            message = (
-                JIRA_OUTCOME_UNKNOWN_MESSAGE
-                if runs_approved_jira_write
-                else RUN_TIMEOUT_MESSAGE.format(seconds=f"{self.timeout_seconds:g}")
-            )
-            return await self._fail(claimed, message)
-        except Exception:
+            async with deadline:
+                result = await self.workflow.ainvoke(payload, config)
+        except Exception as error:
+            if isinstance(error, TimeoutError) and deadline.expired():
+                logger.error("Investigation workflow exceeded %s seconds", self.timeout_seconds)
+                if lease_lost.is_set():
+                    return JobOutcome.DROPPED
+                # The approved write may have run before the hang; its outcome is unknown.
+                message = (
+                    JIRA_OUTCOME_UNKNOWN_MESSAGE
+                    if runs_approved_jira_write
+                    else RUN_TIMEOUT_MESSAGE.format(seconds=f"{self.timeout_seconds:g}")
+                )
+                return await self._fail(claimed, message)
             logger.exception("Investigation workflow failed before producing a result")
             if lease_lost.is_set():
                 return JobOutcome.DROPPED
