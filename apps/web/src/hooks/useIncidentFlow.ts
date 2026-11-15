@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { api } from '../api'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ApiError, api } from '../api'
 import type {
   HumanReviewDecision,
   Incident,
@@ -10,6 +10,14 @@ import type {
 } from '../api'
 
 const WORKSPACE_REFRESH_MS = 10_000
+const ACTIVE_INVESTIGATION_REFRESH_MS = 1_500
+
+const LIFECYCLE_MESSAGES: Record<string, string> = {
+  RUNNING: 'Investigation running…',
+  COMPLETED: 'Investigation completed.',
+  AWAITING_HUMAN_REVIEW: 'Investigation paused for a human decision.',
+  FAILED: 'Investigation finished with a failure.',
+}
 
 export function useIncidentFlow() {
   const [incidents, setIncidents] = useState<Incident[]>([])
@@ -100,36 +108,27 @@ export function useIncidentFlow() {
 
   const startInvestigation = useCallback(async () => {
     if (!selectedIncident) return null
-    setStatusMessage('Running the investigation workflow…')
-    // The start request returns only when the workflow finishes or pauses. Meanwhile, poll the
-    // list so the RUNNING investigation appears and its agent trace can be followed live.
-    const startedAt = Date.now()
-    const poller = window.setInterval(() => {
-      void api.listInvestigations().then((items) => {
-        setInvestigations(items)
-        const running = items.find((item) => item.incident_id === selectedIncident.id
-          && item.lifecycle === 'RUNNING' && Date.parse(item.created_at) >= startedAt - 5000)
-        if (running) setSelectedInvestigation((current) => current?.id === running.id ? current : running)
-      }).catch(() => undefined)
-    }, 1500)
+    setStatusMessage('Queueing the investigation…')
     try {
+      // The API answers 202 with a PENDING investigation; a worker runs it, and polling
+      // (below) follows it through RUNNING to its final or paused state.
       const investigation = await api.startInvestigation(selectedIncident.id, selectedIncident.description)
       setSelectedInvestigation(investigation)
       setInvestigations((items) => [investigation, ...items.filter((item) => item.id !== investigation.id)])
-      setStatusMessage(
-        investigation.lifecycle === 'COMPLETED'
-          ? 'Investigation completed.'
-          : investigation.lifecycle === 'AWAITING_HUMAN_REVIEW'
-            ? 'Investigation paused for a human decision.'
-            : 'Investigation finished with a failure.',
-      )
+      setStatusMessage('Investigation queued…')
       return investigation
     } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        const items = await refreshInvestigations().catch(() => [] as Investigation[])
+        const active = items.find((item) => item.incident_id === selectedIncident.id
+          && (item.lifecycle === 'PENDING' || item.lifecycle === 'RUNNING'))
+        if (active) setSelectedInvestigation(active)
+        setStatusMessage(error.message)
+        return null
+      }
       setStatusMessage(error instanceof Error ? error.message : 'Investigation failed.')
-      await refreshInvestigations()
+      await refreshInvestigations().catch(() => undefined)
       return null
-    } finally {
-      window.clearInterval(poller)
     }
   }, [refreshInvestigations, selectedIncident])
 
@@ -140,7 +139,7 @@ export function useIncidentFlow() {
       const updated = await api.resolveHumanReview(investigation.id, decision)
       setInvestigations((items) => items.map((item) => item.id === updated.id ? updated : item))
       setSelectedInvestigation((item) => item?.id === updated.id ? updated : item)
-      setStatusMessage(updated.lifecycle === 'COMPLETED' ? 'Investigation completed.' : `Investigation is ${updated.lifecycle.toLowerCase()}.`)
+      setStatusMessage(updated.lifecycle === 'PENDING' ? 'Investigation queued…' : (LIFECYCLE_MESSAGES[updated.lifecycle] ?? `Investigation is ${updated.lifecycle.toLowerCase()}.`))
       await refreshWorkspace()
       return updated
     } catch (error) {
@@ -148,6 +147,42 @@ export function useIncidentFlow() {
       throw error
     }
   }, [refreshWorkspace])
+
+  // Keep the selected investigation in step with the polled list.
+  useEffect(() => {
+    setSelectedInvestigation((current) => {
+      const fresh = current && investigations.find((item) => item.id === current.id)
+      return fresh && fresh.updated_at !== current.updated_at ? fresh : current
+    })
+  }, [investigations])
+
+  // Announce lifecycle transitions of the selected investigation once, not on every poll.
+  const lastSeen = useRef<{ id: string, lifecycle: string } | null>(null)
+  useEffect(() => {
+    const previous = lastSeen.current
+    lastSeen.current = selectedInvestigation
+      ? { id: selectedInvestigation.id, lifecycle: selectedInvestigation.lifecycle }
+      : null
+    if (!selectedInvestigation || previous?.id !== selectedInvestigation.id) return
+    if (previous.lifecycle === selectedInvestigation.lifecycle) return
+    const message = LIFECYCLE_MESSAGES[selectedInvestigation.lifecycle]
+    if (message) setStatusMessage(message)
+  }, [selectedInvestigation])
+
+  // Faster feedback while the selected investigation is queued or running.
+  const activeId = selectedInvestigation
+    && (selectedInvestigation.lifecycle === 'PENDING' || selectedInvestigation.lifecycle === 'RUNNING')
+    ? selectedInvestigation.id : null
+  useEffect(() => {
+    if (!activeId) return
+    const timer = window.setInterval(() => {
+      void api.getInvestigation(activeId).then((fresh) => {
+        setInvestigations((items) => items.map((item) => item.id === fresh.id ? fresh : item))
+        setSelectedInvestigation((current) => current?.id === fresh.id ? fresh : current)
+      }).catch(() => undefined)
+    }, ACTIVE_INVESTIGATION_REFRESH_MS)
+    return () => window.clearInterval(timer)
+  }, [activeId])
 
   const selectInvestigation = useCallback((investigation: Investigation) => {
     setSelectedInvestigation(investigation)

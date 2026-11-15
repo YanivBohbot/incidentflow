@@ -92,6 +92,17 @@ export type OperationalMetrics = {
   investigations_by_lifecycle: Record<string, number>
 }
 
+/** Error thrown for non-2xx API responses; `status` is the HTTP status code. */
+export class ApiError extends Error {
+  status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
     ...init,
@@ -99,7 +110,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!response.ok) {
     const payload = await response.json().catch(() => null) as { detail?: string } | null
-    throw new Error(payload?.detail ?? `IncidentFlow API request failed (HTTP ${response.status}).`)
+    throw new ApiError(payload?.detail ?? `IncidentFlow API request failed (HTTP ${response.status}).`, response.status)
   }
   return response.json().catch(() => { throw new Error('IncidentFlow API returned an invalid response.') }) as Promise<T>
 }
@@ -122,6 +133,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ incident_id: incidentId, incident_request: incidentRequest }),
     }),
+  getInvestigation: (investigationId: string) => request<Investigation>(`/investigations/${investigationId}`),
   listInvestigations: () => request<Investigation[]>('/investigations'),
   resolveHumanReview: (investigationId: string, decision: HumanReviewDecision) =>
     request<Investigation>(`/investigations/${investigationId}/human-review/resolve`, {

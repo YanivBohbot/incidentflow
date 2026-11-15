@@ -8,7 +8,7 @@ type SeverityFilter = 'ALL' | Severity
 
 const SEVERITY_ORDER: Severity[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
 const LIFECYCLE_LABELS: Record<string, string> = {
-  PENDING: 'Pending',
+  PENDING: 'Queued',
   RUNNING: 'Running',
   AWAITING_HUMAN_REVIEW: 'Awaiting review',
   COMPLETED: 'Investigated',
