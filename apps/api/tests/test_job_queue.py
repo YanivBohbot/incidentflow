@@ -179,7 +179,7 @@ def test_build_job_queue_without_endpoint_passes_no_explicit_keys(
 
 @pytest.mark.parametrize("value", ["", "   "])
 def test_empty_sqs_endpoint_url_is_treated_as_unset(
-    monkeypatch: pytest.MonkeyPatch, value: str
+    monkeypatch: pytest.MonkeyPatch, no_aws_credentials: None, value: str
 ) -> None:
     monkeypatch.setenv("SQS_ENDPOINT_URL", value)
 
