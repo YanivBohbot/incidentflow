@@ -5,3 +5,6 @@ services:
   api:
     volumes:
       - ${AWS_CONFIG_DIR:?Set AWS_CONFIG_DIR to the host ~/.aws directory}:/home/incidentflow/.aws:ro
+  worker:
+    volumes:
+      - ${AWS_CONFIG_DIR:?Set AWS_CONFIG_DIR to the host ~/.aws directory}:/home/incidentflow/.aws:ro

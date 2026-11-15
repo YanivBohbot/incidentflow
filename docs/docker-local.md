@@ -1,8 +1,9 @@
 # Local Docker environment
 
 This Compose environment runs PostgreSQL, the one-off Alembic migration, the
-IncidentFlow API, the React web application, and Keycloak on one local Docker
-network. It is intended for local validation, not an AWS deployment.
+IncidentFlow API, the investigation worker, ElasticMQ (a local SQS-compatible queue), the React
+web application, and Keycloak on one local Docker network. It is intended for local validation,
+not an AWS deployment.
 
 ## Configure local secrets
 
@@ -33,13 +34,14 @@ docker compose ps
 ```
 
 The migration service exits successfully after applying `alembic upgrade head`.
-The API then starts, opens the PostgreSQL LangGraph checkpointer, and calls
-`checkpointer.setup()` for the checkpoint tables.
+ElasticMQ starts in parallel. The API then starts, opens the PostgreSQL LangGraph checkpointer,
+and calls `checkpointer.setup()` for the checkpoint tables. The worker starts alongside it.
 
 - Web application: `http://127.0.0.1:5173`
 - API health: `http://127.0.0.1:8000/health`
 - API readiness: `http://127.0.0.1:8000/health/ready`
 - Keycloak: `http://127.0.0.1:8080`
+- ElasticMQ (SQS API): `http://127.0.0.1:9324`
 
 The web container proxies `/api/*` to the API container, so browser requests
 remain same-origin.
@@ -47,6 +49,36 @@ remain same-origin.
 If a Vite development server already uses port `5173`, set `WEB_PORT=5174` in
 the root `.env` before starting the `web` service. The web application will
 then be available at `http://127.0.0.1:5174`.
+
+## Investigation queue and worker
+
+Starting or resuming an investigation returns `202` with a `PENDING` row and sends
+`{"investigation_id": ...}` to the `incidentflow-investigations` queue. The `worker` service
+(`python -m incidentflow.worker`) claims each job, runs the workflow, and updates the row; the
+dashboard polls until it finishes. Follow it with `docker compose logs -f worker`.
+
+ElasticMQ is configured in `infra/elasticmq/elasticmq.conf`: a visibility timeout of 300 seconds
+(matching `JOB_LEASE_SECONDS`) and a dead-letter queue, `incidentflow-investigations-dlq`, after 3
+receives. Queue state is in memory, so it is lost when the container restarts; the worker's
+sweeper re-sends `PENDING` and expired `RUNNING` rows from the database. Compose gives `api` and
+`worker` dummy `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` values (`local`) because boto3 requires
+credentials even for ElasticMQ.
+
+### Running the API and worker on the host
+
+To run `uvicorn` and the worker outside Docker against the Compose queue, start only ElasticMQ and
+export the same variables in each shell (`pydantic-settings` reads `.env` but does not export it,
+and boto3 reads credentials from the process environment):
+
+```powershell
+docker compose up -d elasticmq
+$env:AWS_ACCESS_KEY_ID = "local"
+$env:AWS_SECRET_ACCESS_KEY = "local"
+$env:SQS_ENDPOINT_URL = "http://127.0.0.1:9324"
+$env:JOB_QUEUE_URL = "http://127.0.0.1:9324/000000000000/incidentflow-investigations"
+uvicorn incidentflow.main:app --reload          # shell 1, from apps/api
+python -m incidentflow.worker                   # shell 2, from apps/api
+```
 
 ## Stop the stack
 
