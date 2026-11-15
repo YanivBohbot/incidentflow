@@ -55,7 +55,10 @@ then be available at `http://127.0.0.1:5174`.
 Starting or resuming an investigation returns `202` with a `PENDING` row and sends
 `{"investigation_id": ...}` to the `incidentflow-investigations` queue. The `worker` service
 (`python -m incidentflow.worker`) claims each job, runs the workflow, and updates the row; the
-dashboard polls until it finishes. Follow it with `docker compose logs -f worker`.
+dashboard polls until it finishes. Follow it with `docker compose logs -f worker`. A run that
+takes longer than `JOB_TIMEOUT_SECONDS` (default 900, AWS Lambda's 15-minute cap) is cancelled
+and marked `FAILED`; if it was executing an approved Jira write, the error says the Jira outcome
+is unknown, so check Jira before launching again.
 
 ElasticMQ is configured in `infra/elasticmq/elasticmq.conf`: a visibility timeout of 300 seconds
 (matching `JOB_LEASE_SECONDS`) and a dead-letter queue, `incidentflow-investigations-dlq`, after 3

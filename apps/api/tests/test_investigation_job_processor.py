@@ -23,6 +23,7 @@ from incidentflow.agent.orchestration.investigation_workflow import (
 from incidentflow.application.jobs.processor import (
     JIRA_OUTCOME_UNKNOWN_MESSAGE,
     MAX_ATTEMPTS_MESSAGE,
+    RUN_TIMEOUT_MESSAGE,
     InvestigationJobProcessor,
     JobOutcome,
 )
@@ -86,6 +87,25 @@ class DiesAfterJiraWriteSupervisor(ApprovalGatedSupervisor):
         result = await super().ainvoke(payload, config=config)
         if len(self.resume_values) == 1:
             raise WorkerDied()
+        return result
+
+
+class HungSupervisor(ReportingSupervisor):
+    """Never returns, like a stuck model or MCP call."""
+
+    async def ainvoke(self, _payload: dict, *, config: dict) -> dict:
+        self.calls += 1
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+
+class HangsAfterJiraWriteSupervisor(ApprovalGatedSupervisor):
+    """Executes the approved write, then hangs before the node returns."""
+
+    async def ainvoke(self, payload: dict, *, config: dict) -> dict:
+        result = await super().ainvoke(payload, config=config)
+        if len(self.resume_values) == 1:
+            await asyncio.Event().wait()
         return result
 
 
@@ -509,3 +529,72 @@ async def test_fenced_write_after_lost_lease_is_dropped() -> None:
 
     assert await harness.processor.process(investigation.id) is JobOutcome.DROPPED
     assert harness.get(investigation.id).lifecycle is InvestigationLifecycle.RUNNING
+
+
+@pytest.mark.anyio
+async def test_hung_workflow_fails_after_the_run_timeout() -> None:
+    supervisor = HungSupervisor()
+    harness = Harness(supervisor, timeout_seconds=0.05)
+    investigation = harness.create()
+
+    outcome = await asyncio.wait_for(harness.processor.process(investigation.id), timeout=5)
+
+    assert outcome is JobOutcome.FAILED
+    failed = harness.get(investigation.id)
+    assert failed.lifecycle is InvestigationLifecycle.FAILED
+    assert failed.error_message == RUN_TIMEOUT_MESSAGE.format(seconds="0.05")
+    assert failed.error_message == "The investigation did not finish within 0.05 seconds."
+    assert supervisor.calls == 1
+
+
+@pytest.mark.anyio
+async def test_hung_approved_jira_resume_fails_with_unknown_jira_outcome() -> None:
+    supervisor = HangsAfterJiraWriteSupervisor(REPORT)
+    harness = Harness(supervisor, timeout_seconds=0.05)
+    investigation = harness.create()
+    assert await harness.processor.process(investigation.id) is JobOutcome.AWAITING_HUMAN_REVIEW
+    harness.request_resume(investigation.id, APPROVE_PAYLOAD)
+
+    outcome = await asyncio.wait_for(harness.processor.process(investigation.id), timeout=5)
+
+    assert outcome is JobOutcome.FAILED
+    failed = harness.get(investigation.id)
+    assert failed.lifecycle is InvestigationLifecycle.FAILED
+    assert failed.error_message == JIRA_OUTCOME_UNKNOWN_MESSAGE
+    assert len(supervisor.resume_values) == 1
+
+
+@pytest.mark.anyio
+async def test_nested_agent_death_after_approved_jira_write_is_not_rerun() -> None:
+    """A real create_agent + HITL Jira tool: the write runs, then the worker dies."""
+    writes: list[str] = []
+
+    @tool
+    def createJiraIssue(summary: str) -> str:
+        """Create a Jira issue."""
+        writes.append(summary)
+        raise WorkerDied()
+
+    agent = create_agent(
+        scripted_model([[("createJiraIssue", {"summary": "Payment API errors"})], "done"]),
+        tools=[createJiraIssue],
+        middleware=[HumanInTheLoopMiddleware(interrupt_on={"createJiraIssue": True})],
+    )
+    harness = Harness(agent)
+    investigation = harness.create()
+    assert await harness.processor.process(investigation.id) is JobOutcome.AWAITING_HUMAN_REVIEW
+    assert writes == []
+    harness.request_resume(investigation.id, APPROVE_PAYLOAD)
+
+    with pytest.raises(WorkerDied):
+        await harness.processor.process(investigation.id)
+    assert writes == ["Payment API errors"]
+    harness.expire_lease(investigation.id)
+
+    outcome = await harness.processor.process(investigation.id)
+
+    assert outcome is JobOutcome.FAILED
+    failed = harness.get(investigation.id)
+    assert failed.lifecycle is InvestigationLifecycle.FAILED
+    assert failed.error_message == JIRA_OUTCOME_UNKNOWN_MESSAGE
+    assert writes == ["Payment API errors"]

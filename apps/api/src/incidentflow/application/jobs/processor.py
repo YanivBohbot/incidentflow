@@ -32,6 +32,9 @@ JIRA_OUTCOME_UNKNOWN_MESSAGE = (
     "unknown: check Jira before launching a new investigation."
 )
 MAX_ATTEMPTS_MESSAGE = "The investigation could not complete after {attempts} attempts."
+RUN_TIMEOUT_MESSAGE = "The investigation did not finish within {seconds} seconds."
+# Fits AWS Lambda's 15-minute cap, so a Lambda handler can reuse the processor unchanged.
+DEFAULT_TIMEOUT_SECONDS = 900
 WORKFLOW_FAILED_MESSAGE = "Workflow execution failed before a report was produced."
 
 
@@ -90,6 +93,7 @@ class InvestigationJobProcessor:
         lease_seconds: int,
         max_attempts: int,
         heartbeat_interval_seconds: float | None = None,
+        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     ) -> None:
         self.session_factory = session_factory
         self.workflow = workflow
@@ -100,6 +104,7 @@ class InvestigationJobProcessor:
             if heartbeat_interval_seconds is not None
             else lease_seconds / 3
         )
+        self.timeout_seconds = timeout_seconds
 
     async def process(
         self,
@@ -121,6 +126,12 @@ class InvestigationJobProcessor:
         values = snapshot.values or {}
         interrupts = [item for task in snapshot.tasks for item in task.interrupts]
         resume = claimed.resume_payload
+        approved_jira_write = bool(
+            resume
+            and resume.get("review_type") == "JIRA_WRITE"
+            and resume.get("decision") == "APPROVE"
+        )
+        runs_approved_jira_write = False
 
         if not values and not snapshot.next:
             # 1. Fresh: no checkpoint yet.
@@ -134,14 +145,11 @@ class InvestigationJobProcessor:
                 resume=resume["command_resume"],
                 update={"review_events": [resume["review_event"]]},
             )
+            runs_approved_jira_write = approved_jira_write
         elif interrupts:
             # An approved Jira write on a redelivered job may already have run: a crash after
             # the call is indistinguishable from one before it.
-            if (
-                resume
-                and resume.get("review_type") == "JIRA_WRITE"
-                and resume.get("decision") == "APPROVE"
-            ):
+            if approved_jira_write:
                 return await self._fail(claimed, JIRA_OUTCOME_UNKNOWN_MESSAGE)
             # 4. Paused, but not persisted: the previous worker died first. On a reclaim the
             # pending interrupt may be a later one the operator never saw, so a stored
@@ -161,7 +169,13 @@ class InvestigationJobProcessor:
             # 5. Finished, but the previous worker died before persisting the result.
             return await self._persist(claimed, dict(values))
 
-        return await self._run(claimed, payload, config, keep_alive)
+        return await self._run(
+            claimed,
+            payload,
+            config,
+            keep_alive,
+            runs_approved_jira_write=runs_approved_jira_write,
+        )
 
     async def _run(
         self,
@@ -169,11 +183,27 @@ class InvestigationJobProcessor:
         payload: Any,
         config: dict,
         keep_alive: Callable[[], Awaitable[None]] | None,
+        *,
+        runs_approved_jira_write: bool,
     ) -> JobOutcome:
         lease_lost = asyncio.Event()
         heartbeat = asyncio.create_task(self._heartbeat_loop(claimed, keep_alive, lease_lost))
         try:
-            result = await self.workflow.ainvoke(payload, config)
+            # Without a deadline a hung run renews its lease forever and blocks the incident.
+            result = await asyncio.wait_for(
+                self.workflow.ainvoke(payload, config), timeout=self.timeout_seconds
+            )
+        except TimeoutError:
+            logger.error("Investigation workflow exceeded %s seconds", self.timeout_seconds)
+            if lease_lost.is_set():
+                return JobOutcome.DROPPED
+            # The approved write may have run before the hang; its outcome is unknown.
+            message = (
+                JIRA_OUTCOME_UNKNOWN_MESSAGE
+                if runs_approved_jira_write
+                else RUN_TIMEOUT_MESSAGE.format(seconds=f"{self.timeout_seconds:g}")
+            )
+            return await self._fail(claimed, message)
         except Exception:
             logger.exception("Investigation workflow failed before producing a result")
             if lease_lost.is_set():

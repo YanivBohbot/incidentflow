@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 
 from incidentflow.application.jobs.processor import JobOutcome
 from incidentflow.application.jobs.queue import InMemoryJobQueue
+from incidentflow.core.config import Settings
 from incidentflow.domain.incidents.models import IncidentPriority
 from incidentflow.domain.investigations.models import InvestigationCreate, utc_now
 from incidentflow.infrastructure.database.base import Base
@@ -17,7 +18,7 @@ from incidentflow.infrastructure.database.investigation_repository import (
     InvestigationRepository,
 )
 from incidentflow.infrastructure.database.models import IncidentORM, InvestigationORM
-from incidentflow.worker import run_worker, sweep_stale_investigations
+from incidentflow.worker import build_processor, run_worker, sweep_stale_investigations
 
 pytestmark = pytest.mark.anyio
 
@@ -263,3 +264,28 @@ async def test_worker_backs_off_after_receive_failure() -> None:
     await asyncio.wait_for(task, timeout=1)
 
     assert 1 <= len(calls) <= 4
+
+
+def test_build_processor_uses_job_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    monkeypatch.setenv("OPENAI_API_KEY", "test")
+    monkeypatch.setenv("JOB_LEASE_SECONDS", "120")
+    monkeypatch.setenv("JOB_MAX_ATTEMPTS", "5")
+    monkeypatch.setenv("JOB_TIMEOUT_SECONDS", "600")
+    settings = Settings(_env_file=None)
+    session_factory = sessionmaker()
+    workflow = object()
+
+    processor = build_processor(settings, session_factory, workflow)
+
+    assert processor.session_factory is session_factory
+    assert processor.workflow is workflow
+    assert processor.lease_seconds == 120
+    assert processor.max_attempts == 5
+    assert processor.timeout_seconds == 600
+
+
+def test_job_timeout_defaults_to_lambda_cap() -> None:
+    settings = Settings(_env_file=None, database_url="sqlite://", openai_api_key="test")
+
+    assert settings.job_timeout_seconds == 900

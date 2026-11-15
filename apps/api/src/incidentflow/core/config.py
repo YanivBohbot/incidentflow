@@ -74,6 +74,8 @@ class Settings(BaseSettings):
     worker_concurrency: int = 2
     job_lease_seconds: int = 300
     job_max_attempts: int = 3
+    # Deadline for one workflow run; the default fits AWS Lambda's 15-minute cap.
+    job_timeout_seconds: float = 900
 
     @field_validator("sqs_endpoint_url", mode="before")
     @classmethod

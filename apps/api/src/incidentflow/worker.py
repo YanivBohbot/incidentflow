@@ -20,7 +20,7 @@ from incidentflow.agent.orchestration.investigation_workflow import build_invest
 from incidentflow.agent.orchestration.supervisor import build_investigation_supervisor
 from incidentflow.application.jobs.processor import InvestigationJobProcessor
 from incidentflow.application.jobs.queue import JobQueue, ReceivedJob
-from incidentflow.core.config import get_settings
+from incidentflow.core.config import Settings, get_settings
 from incidentflow.infrastructure.database.investigation_repository import InvestigationRepository
 from incidentflow.infrastructure.database.session import get_session_factory
 from incidentflow.infrastructure.queue.sqs import build_job_queue
@@ -134,6 +134,18 @@ async def run_worker(
             await asyncio.gather(*list(in_flight), return_exceptions=True)
 
 
+def build_processor(
+    settings: Settings, session_factory: Callable[[], Session], workflow: Any
+) -> InvestigationJobProcessor:
+    return InvestigationJobProcessor(
+        session_factory,
+        workflow,
+        lease_seconds=settings.job_lease_seconds,
+        max_attempts=settings.job_max_attempts,
+        timeout_seconds=settings.job_timeout_seconds,
+    )
+
+
 async def main() -> None:
     settings = get_settings()
     session_factory = get_session_factory()
@@ -151,12 +163,7 @@ async def main() -> None:
         workflow: Any = build_investigation_workflow(
             build_investigation_supervisor(), checkpointer=checkpointer
         )
-        processor = InvestigationJobProcessor(
-            session_factory,
-            workflow,
-            lease_seconds=settings.job_lease_seconds,
-            max_attempts=settings.job_max_attempts,
-        )
+        processor = build_processor(settings, session_factory, workflow)
         logger.info("Worker started with concurrency %d.", settings.worker_concurrency)
         main_task = asyncio.create_task(
             run_worker(
