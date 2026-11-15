@@ -113,8 +113,11 @@ investigation, so it counts the attempts of the current job only. If a job resum
 after the Jira call but before the next checkpoint is indistinguishable from a crash before the
 call. It marks the investigation `FAILED` with a message telling the operator the Jira write
 outcome is unknown and to check Jira. This is deliberately conservative (a crash before the call
-also ends here). Rejections and report-level reviews have no external write and are retried
-normally; read-only work is always safe to re-run.
+also ends here). Any other resume payload is applied only on the job's first attempt: on a
+reclaim, the interrupt now pending may be a later one the operator never saw, so the worker
+persists that pending interrupt as `AWAITING_HUMAN_REVIEW` and the operator decides again.
+`mark_awaiting_human_review` clears `pending_resume_payload`. Read-only work is always safe to
+re-run.
 
 ### Queue abstraction
 
