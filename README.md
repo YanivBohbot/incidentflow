@@ -69,8 +69,11 @@ memory only after an operator confirms them.
 flowchart LR
     UI[React dashboard] -->|/api| API[FastAPI]
     API --> SVC[InvestigationService]
-    SVC -->|persist lifecycle| PG[(PostgreSQL)]
-    SVC -->|ainvoke / resume| WF
+    SVC -->|persist PENDING| PG[(PostgreSQL)]
+    SVC -->|investigation_id| Q[[SQS job queue<br/>ElasticMQ locally]]
+    Q --> WK[Worker]
+    WK -->|lease-fenced lifecycle| PG
+    WK -->|ainvoke / resume| WF
 
     subgraph WF[LangGraph investigation workflow]
         direction LR
@@ -90,8 +93,13 @@ flowchart LR
     SUP --> C[CloudWatch Observability<br/>CloudWatch MCP]
 ```
 
-1. **Start.** `POST /api/investigations` creates an investigation row (`PENDING` → `RUNNING`) and
-   invokes the workflow on a thread dedicated to that investigation.
+1. **Start.** `POST /api/investigations` creates a `PENDING` investigation row, sends
+   `{"investigation_id"}` to an SQS-compatible job queue (ElasticMQ locally), and returns `202`;
+   the dashboard polls the row. A separate worker (`python -m incidentflow.worker`) claims the row
+   with a lease (`RUNNING`), heartbeats it while it runs the workflow on a thread dedicated to that
+   investigation, and fences every write with the lease token. A run is cancelled and marked
+   `FAILED` after `JOB_TIMEOUT_SECONDS`. A sweeper re-sends stale `PENDING` rows and `RUNNING`
+   rows whose lease expired, so a lost message or a dead worker does not strand an investigation.
 2. **Validate.** Empty or oversized requests (over 5,000 characters) are rejected before any
    model or external call.
 3. **Investigate.** The `investigate` node calls the supervisor (a LangChain `create_agent`). A
@@ -110,7 +118,8 @@ flowchart LR
    - the Jira specialist wants to write, and `HumanInTheLoopMiddleware` interrupts inside the
      nested agent.
 
-   `POST /api/investigations/{id}/human-review/resolve` resumes the same thread with
+   `POST /api/investigations/{id}/human-review/resolve` stores the decision, marks the row
+   `PENDING`, enqueues it, and returns `202`; the worker resumes the same thread with
    `Command(resume=...)`.
 7. **Finish.** The final state is saved as `COMPLETED` or `FAILED`.
 
@@ -198,8 +207,8 @@ cd incidentflow
    docker compose ps
    ```
 
-   Compose starts PostgreSQL, runs `alembic upgrade head` once, then starts the API, the web app,
-   and Keycloak.
+   Compose starts PostgreSQL, runs `alembic upgrade head` once, then starts ElasticMQ (the local
+   SQS-compatible job queue), the API, the investigation worker, the web app, and Keycloak.
 
 | Service         | URL                                  |
 | --------------- | ------------------------------------ |
@@ -214,11 +223,11 @@ details.
 
 ### Option B: run the API and web app locally
 
-1. **Start PostgreSQL only:**
+1. **Start PostgreSQL and the job queue (ElasticMQ) only:**
 
    ```bash
    cp .env.example .env
-   docker compose up -d postgres
+   docker compose up -d postgres elasticmq
    ```
 
 2. **Install and run the API** (from `apps/api`):
@@ -233,9 +242,20 @@ details.
    uvicorn incidentflow.main:app --reload
    ```
 
-   On startup, the API opens the LangGraph PostgreSQL checkpointer and creates its tables.
+   On startup, the API opens the LangGraph PostgreSQL checkpointer and creates its tables. The
+   example `.env` already points `SQS_ENDPOINT_URL` and `JOB_QUEUE_URL` at ElasticMQ on
+   `localhost:9324`; no AWS credentials are needed for it.
 
-3. **Run the web app** (from `apps/web`, in another terminal):
+3. **Run the investigation worker** (from `apps/api`, in another terminal, same virtualenv):
+
+   ```bash
+   python -m incidentflow.worker
+   ```
+
+   Without the worker, investigations stay `PENDING`. See
+   [Running the API and worker on the host](docs/docker-local.md#running-the-api-and-worker-on-the-host).
+
+4. **Run the web app** (from `apps/web`, in another terminal):
 
    ```bash
    cd apps/web
