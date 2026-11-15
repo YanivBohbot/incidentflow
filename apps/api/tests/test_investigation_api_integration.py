@@ -1,9 +1,9 @@
 from collections.abc import Iterator
 
+from agent_fakes import ApprovalGatedSupervisor
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.types import interrupt
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -48,30 +48,6 @@ class CompletedWorkflow:
             "report": self.report,
             "errors": [],
         }
-
-
-class ApprovalGatedSupervisor:
-    """Act like a Jira specialist that pauses before its write tool can run."""
-
-    def __init__(self, report: InvestigationReport) -> None:
-        self.report = report
-        self.resume_values: list[object] = []
-
-    async def ainvoke(self, _payload: dict, *, config: dict) -> dict:
-        assert config["configurable"]["thread_id"].startswith("investigation:")
-        decision = interrupt(
-            {
-                "action_requests": [
-                    {
-                        "name": "createJiraIssue",
-                        "arguments": {"summary": "Payment API errors"},
-                        "description": "Jira issue creation requires operator approval.",
-                    }
-                ]
-            }
-        )
-        self.resume_values.append(decision)
-        return {"structured_response": self.report}
 
 
 def test_incident_investigation_and_persisted_report_round_trip() -> None:
