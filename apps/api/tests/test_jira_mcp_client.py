@@ -12,6 +12,7 @@ from incidentflow.agent.mcp_clients.jira import (
     select_read_tools,
     select_ticket_tools,
 )
+from incidentflow.agent.mcp_clients.oauth_store import build_oauth_token_storage
 from incidentflow.core.config import get_settings
 
 
@@ -142,10 +143,12 @@ def test_jira_client_uses_encrypted_persistent_oauth_when_configured(monkeypatch
 
     monkeypatch.setenv("MCP_OAUTH_TOKEN_STORE_DIR", str(tmp_path / "oauth-tokens"))
     monkeypatch.setenv("MCP_OAUTH_STORAGE_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    monkeypatch.setenv("MCP_OAUTH_TOKEN_STORE", "disk")
     get_settings.cache_clear()
 
     try:
-        auth = JiraMCPClient("https://example.test/mcp")._oauth_auth()
+        storage = build_oauth_token_storage(get_settings())
+        auth = JiraMCPClient("https://example.test/mcp")._oauth_auth(storage)
     finally:
         get_settings.cache_clear()
 
@@ -157,10 +160,11 @@ def test_jira_client_rejects_partially_configured_oauth_persistence(monkeypatch,
     # An empty process value deliberately overrides a developer's local .env
     # secret so this test can exercise the partially configured case.
     monkeypatch.setenv("MCP_OAUTH_STORAGE_ENCRYPTION_KEY", "")
+    monkeypatch.setenv("MCP_OAUTH_TOKEN_STORE", "disk")
     get_settings.cache_clear()
 
     try:
         with pytest.raises(RuntimeError, match="Configure both"):
-            JiraMCPClient("https://example.test/mcp")._oauth_auth()
+            JiraMCPClient("https://example.test/mcp")._client()
     finally:
         get_settings.cache_clear()

@@ -9,6 +9,7 @@ from langgraph.errors import GraphInterrupt
 from incidentflow.agent.agents_specialist.it_operations import build_it_operations_agent
 from incidentflow.agent.findings import ITOperationsFinding
 from incidentflow.agent.mcp_clients.jira import JiraMCPClient
+from incidentflow.agent.mcp_clients.oauth_store import JiraAuthorizationRequiredError
 from incidentflow.agent.tools.subagent_runtime import subagent_config
 from incidentflow.core.config import get_settings
 
@@ -68,7 +69,17 @@ async def ask_it_operations(incident_context: str, config: RunnableConfig) -> st
         except GraphInterrupt:
             # Let LangGraph persist and bubble a pending Jira tool approval.
             raise
-        except Exception:
+        except Exception as error:
+            authorization_error = _authorization_error(error)
+            if authorization_error is not None:
+                logger.warning("Jira specialist delegation skipped: %s", authorization_error)
+                return ITOperationsFinding(
+                    summary=f"Live Jira MCP was unavailable: {authorization_error}",
+                    related_ticket_ids=[],
+                    evidence=[],
+                    hypotheses=[],
+                    confidence=0,
+                ).model_dump_json()
             logger.exception("Jira specialist delegation failed")
             return ITOperationsFinding(
                 summary="Live Jira MCP was unavailable during this investigation.",
@@ -85,3 +96,22 @@ async def ask_it_operations(incident_context: str, config: RunnableConfig) -> st
         hypotheses=[],
         confidence=0,
     ).model_dump_json()
+
+
+def _authorization_error(error: BaseException) -> JiraAuthorizationRequiredError | None:
+    """Find a missing-authorization error wrapped by the MCP client or its task groups."""
+    pending = [error]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, JiraAuthorizationRequiredError):
+            return current
+        if isinstance(current, BaseExceptionGroup):
+            pending.extend(current.exceptions)
+        pending.extend(
+            linked for linked in (current.__cause__, current.__context__) if linked is not None
+        )
+    return None

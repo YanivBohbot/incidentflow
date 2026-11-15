@@ -13,7 +13,13 @@ async def main() -> None:
     if not settings.jira_mcp_enabled:
         raise RuntimeError("Set JIRA_MCP_ENABLED=true before running this verification.")
 
-    async with JiraMCPClient(settings.jira_mcp_url).read_tools() as tool_set:
+    checked = await run_read_checks(JiraMCPClient(settings.jira_mcp_url))
+    print(f"Jira MCP read verification succeeded: {checked}.")
+
+
+async def run_read_checks(client: JiraMCPClient) -> str:
+    """Exercise the approved read tools and describe which checks ran."""
+    async with client.read_tools() as tool_set:
         resources_result = await tool_set.get("getAccessibleAtlassianResources").ainvoke({})
         cloud_id = _first_cloud_id(resources_result)
         await tool_set.get("listJiraProjects").ainvoke({"cloudId": cloud_id})
@@ -29,7 +35,7 @@ async def main() -> None:
     checked = "resources, projects, JQL search"
     if issue_key is not None:
         checked += ", and issue retrieval"
-    print(f"Jira MCP read verification succeeded: {checked}.")
+    return checked
 
 
 def _first_cloud_id(result: Any) -> str:

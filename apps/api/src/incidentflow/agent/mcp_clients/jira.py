@@ -4,16 +4,21 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
-from cryptography.fernet import Fernet
 from fastmcp import Client
 from fastmcp.client.auth import OAuth
-from key_value.aio.stores.disk import DiskStore
-from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+from key_value.aio.protocols.key_value import AsyncKeyValue
 from langchain.mcp import MCPAdapter
 from langchain_core.tools import BaseTool, StructuredTool
+
+from incidentflow.agent.mcp_clients.oauth_store import (
+    NonInteractiveOAuth,
+    build_oauth_token_storage,
+)
+
+# Fixed so the redirect URI registered with Atlassian stays the same between authorizations.
+JIRA_OAUTH_CALLBACK_PORT = 8765
 
 JIRA_READ_TOOL_NAMES = (
     "getAccessibleAtlassianResources",
@@ -55,33 +60,36 @@ class JiraMCPToolSet:
 class JiraMCPClient:
     """Discover and restrict Jira Cloud MCP tools to approved operations only."""
 
-    def __init__(self, server_url: str) -> None:
+    def __init__(self, server_url: str, *, interactive: bool | None = None) -> None:
         self.server_url = server_url
+        self.interactive = interactive
 
     def _client(self) -> Client:
-        return Client(self.server_url, auth=self._oauth_auth())
-
-    def _oauth_auth(self) -> str | OAuth:
-        """Use encrypted persistence only when both local OAuth settings are configured."""
         from incidentflow.core.config import get_settings
 
-        settings = get_settings()
-        directory = settings.mcp_oauth_token_store_dir
-        encryption_key = settings.mcp_oauth_storage_encryption_key
-        if not directory and not encryption_key:
+        token_storage = build_oauth_token_storage(get_settings())
+        return Client(self.server_url, auth=self._oauth_auth(token_storage))
+
+    def _oauth_auth(self, token_storage: AsyncKeyValue | None) -> str | OAuth:
+        """Use the encrypted store when configured; only interactive runs may open a browser."""
+        from incidentflow.core.config import get_settings
+
+        if token_storage is None:
             return "oauth"
-        if not directory or not encryption_key:
-            raise RuntimeError(
-                "Configure both MCP_OAUTH_TOKEN_STORE_DIR and "
-                "MCP_OAUTH_STORAGE_ENCRYPTION_KEY to persist Jira OAuth tokens."
+        interactive = self.interactive
+        if interactive is None:
+            interactive = get_settings().mcp_oauth_interactive
+        if interactive:
+            return OAuth(
+                mcp_url=self.server_url,
+                client_name="IncidentFlow Jira MCP",
+                token_storage=token_storage,
+                callback_port=JIRA_OAUTH_CALLBACK_PORT,
             )
-        return OAuth(
+        return NonInteractiveOAuth(
             mcp_url=self.server_url,
             client_name="IncidentFlow Jira MCP",
-            token_storage=FernetEncryptionWrapper(
-                key_value=DiskStore(directory=Path(directory).expanduser()),
-                fernet=Fernet(encryption_key.encode()),
-            ),
+            token_storage=token_storage,
         )
 
     @asynccontextmanager

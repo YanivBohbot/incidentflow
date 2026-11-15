@@ -23,8 +23,12 @@ class Settings(BaseSettings):
     jira_mcp_url: str = "https://mcp.atlassian.com/v2/mcp?tools=all"
     jira_mcp_enabled: bool = False
     jira_mcp_write_enabled: bool = False
+    mcp_oauth_token_store: Literal["disk", "dynamodb"] = "disk"
     mcp_oauth_token_store_dir: str | None = None
+    mcp_oauth_dynamodb_table: str | None = None
     mcp_oauth_storage_encryption_key: str | None = None
+    # Only the authorization script should open a browser; services fail fast without tokens.
+    mcp_oauth_interactive: bool = False
     github_mcp_transport: Literal["http", "stdio"] = "stdio"
     github_mcp_url: str | None = None
     github_mcp_command: str = "docker.exe" if os.name == "nt" else "docker"
