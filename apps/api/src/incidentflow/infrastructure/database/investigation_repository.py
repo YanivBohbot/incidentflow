@@ -205,6 +205,7 @@ class InvestigationRepository:
             lifecycle=InvestigationLifecycle.AWAITING_HUMAN_REVIEW,
             report_payload=report.model_dump(mode="json") if report is not None else None,
             pending_human_review_payload=review.model_dump(mode="json"),
+            pending_resume_payload=None,
             error_message=None,
             lease_token=None,
             lease_expires_at=None,

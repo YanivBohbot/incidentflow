@@ -11,6 +11,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 from langchain_core.tools import tool
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command, interrupt
 from sqlalchemy import create_engine, update
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -88,6 +89,22 @@ class DiesAfterJiraWriteSupervisor(ApprovalGatedSupervisor):
         return result
 
 
+class TwoJiraWritesSupervisor:
+    """Pauses for a Jira issue, then pauses again for a Jira comment."""
+
+    def __init__(self) -> None:
+        self.resume_values: list[object] = []
+
+    async def ainvoke(self, _payload: dict, *, config: dict) -> dict:
+        for name, arguments in (
+            ("createJiraIssue", {"summary": "Payment API errors"}),
+            ("addOrEditJiraIssueComment", {"commentBody": "Investigating."}),
+        ):
+            decision = interrupt({"action_requests": [{"name": name, "arguments": arguments}]})
+            self.resume_values.append(decision)
+        return {"structured_response": REPORT}
+
+
 class Harness:
     def __init__(self, supervisor: object, **processor_options: float) -> None:
         engine = create_engine(
@@ -142,6 +159,10 @@ class Harness:
                 now=utc_now() - timedelta(seconds=seconds_ago),
             )
         assert claimed is not None
+
+    def pending_resume_payload(self, investigation_id: UUID) -> dict | None:
+        with self.session_factory() as session:
+            return session.get(InvestigationORM, investigation_id).pending_resume_payload
 
     def expire_lease(self, investigation_id: UUID) -> None:
         with self.session_factory() as session:
@@ -249,7 +270,7 @@ async def test_worker_death_after_approved_jira_write_is_not_rerun() -> None:
 
 
 @pytest.mark.anyio
-async def test_reclaimed_rejected_jira_resume_is_retried() -> None:
+async def test_reclaimed_rejected_jira_resume_is_asked_again() -> None:
     supervisor = ApprovalGatedSupervisor(REPORT)
     harness = Harness(supervisor)
     investigation = harness.create()
@@ -259,7 +280,39 @@ async def test_reclaimed_rejected_jira_resume_is_retried() -> None:
 
     outcome = await harness.processor.process(investigation.id)
 
-    assert outcome is JobOutcome.COMPLETED
+    assert outcome is JobOutcome.AWAITING_HUMAN_REVIEW
+    paused = harness.get(investigation.id)
+    assert paused.human_review is not None
+    assert paused.human_review.draft["tool_name"] == "createJiraIssue"
+    assert supervisor.resume_values == []
+    assert harness.pending_resume_payload(investigation.id) is None
+
+
+@pytest.mark.anyio
+async def test_reclaim_never_applies_old_decision_to_a_new_interrupt() -> None:
+    supervisor = TwoJiraWritesSupervisor()
+    harness = Harness(supervisor)
+    investigation = harness.create()
+    assert await harness.processor.process(investigation.id) is JobOutcome.AWAITING_HUMAN_REVIEW
+    harness.request_resume(investigation.id, REJECT_PAYLOAD)
+    # A worker claimed the job, resumed the graph to its second pause, and died before
+    # persisting that pause.
+    harness.claim_and_die(investigation.id)
+    await harness.workflow.ainvoke(
+        Command(
+            resume=REJECT_PAYLOAD["command_resume"],
+            update={"review_events": [REJECT_PAYLOAD["review_event"]]},
+        ),
+        harness.config(investigation),
+    )
+    assert supervisor.resume_values == [REJECT_PAYLOAD["command_resume"]]
+
+    outcome = await harness.processor.process(investigation.id)
+
+    assert outcome is JobOutcome.AWAITING_HUMAN_REVIEW
+    paused = harness.get(investigation.id)
+    assert paused.human_review is not None
+    assert paused.human_review.draft["tool_name"] == "addOrEditJiraIssueComment"
     assert supervisor.resume_values == [REJECT_PAYLOAD["command_resume"]]
 
 

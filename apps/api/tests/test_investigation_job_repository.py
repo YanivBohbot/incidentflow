@@ -203,3 +203,22 @@ def test_running_row_with_null_lease_is_claimable_and_stale(
     assert repo.stale_investigation_ids(pending_older_than_seconds=120) == [inv_id]
     claimed = repo.claim(inv_id, lease_seconds=300)
     assert claimed is not None and claimed.attempt_count == 1
+
+
+def test_mark_awaiting_human_review_clears_the_resume_payload(
+    session: Session, incident_id: UUID
+) -> None:
+    repo = InvestigationRepository(session)
+    inv_id = _create(repo, incident_id)
+    first = repo.claim(inv_id, lease_seconds=300)
+    repo.mark_awaiting_human_review(inv_id, REPORT, REVIEW, lease_token=first.lease_token)
+    repo.request_resume(inv_id, {"command_resume": {"decisions": [{"type": "reject"}]}})
+    resumed = repo.claim(inv_id, lease_seconds=300)
+
+    paused = repo.mark_awaiting_human_review(
+        inv_id, REPORT, REVIEW, lease_token=resumed.lease_token
+    )
+
+    assert paused is not None
+    session.expire_all()
+    assert session.get(InvestigationORM, inv_id).pending_resume_payload is None

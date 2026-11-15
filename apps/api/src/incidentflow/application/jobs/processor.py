@@ -128,21 +128,24 @@ class InvestigationJobProcessor:
                 "incident_request": investigation.incident_request,
                 "incident_business_status": investigation.incident_business_status,
             }
-        elif interrupts and resume:
-            # 2. Resume the operator's decision. An approved Jira write on a redelivered job
-            # may already have run: a crash after the call is indistinguishable from one before.
-            if (
-                resume.get("review_type") == "JIRA_WRITE"
-                and resume.get("decision") == "APPROVE"
-                and claimed.attempt_count > 1
-            ):
-                return await self._fail(claimed, JIRA_OUTCOME_UNKNOWN_MESSAGE)
+        elif interrupts and resume and claimed.attempt_count == 1:
+            # 2. First attempt of this job: apply the operator's decision.
             payload = Command(
                 resume=resume["command_resume"],
                 update={"review_events": [resume["review_event"]]},
             )
         elif interrupts:
-            # 4. Paused, but the previous worker died before persisting the pause.
+            # An approved Jira write on a redelivered job may already have run: a crash after
+            # the call is indistinguishable from one before it.
+            if (
+                resume
+                and resume.get("review_type") == "JIRA_WRITE"
+                and resume.get("decision") == "APPROVE"
+            ):
+                return await self._fail(claimed, JIRA_OUTCOME_UNKNOWN_MESSAGE)
+            # 4. Paused, but not persisted: the previous worker died first. On a reclaim the
+            # pending interrupt may be a later one the operator never saw, so a stored
+            # decision is never applied to it; the operator is asked again.
             return await self._persist(
                 claimed,
                 {
