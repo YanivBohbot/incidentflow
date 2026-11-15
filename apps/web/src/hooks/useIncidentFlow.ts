@@ -45,6 +45,9 @@ export function useIncidentFlow() {
   const [readiness, setReadiness] = useState<Readiness>({ status: 'starting' })
   const [statusMessage, setStatusMessage] = useState('Connecting to the IncidentFlow API…')
   const [isLoading, setIsLoading] = useState(true)
+  // The ref blocks a second start before React re-renders; the state disables the button.
+  const startInFlight = useRef(false)
+  const [isStartingInvestigation, setIsStartingInvestigation] = useState(false)
 
   // Rows added locally (just queued) that an in-flight list response may predate.
   const localRows = useRef(new Map<string, Investigation>())
@@ -129,7 +132,9 @@ export function useIncidentFlow() {
   }, [])
 
   const startInvestigation = useCallback(async () => {
-    if (!selectedIncident) return null
+    if (!selectedIncident || startInFlight.current) return null
+    startInFlight.current = true
+    setIsStartingInvestigation(true)
     setStatusMessage('Queueing the investigation…')
     try {
       // The API answers 202 with a PENDING investigation; a worker runs it, and polling
@@ -152,6 +157,9 @@ export function useIncidentFlow() {
       setStatusMessage(error instanceof Error ? error.message : 'Investigation failed.')
       await refreshInvestigations().catch(() => undefined)
       return null
+    } finally {
+      startInFlight.current = false
+      setIsStartingInvestigation(false)
     }
   }, [refreshInvestigations, selectedIncident])
 
@@ -223,6 +231,7 @@ export function useIncidentFlow() {
     incidents,
     investigations,
     isLoading,
+    isStartingInvestigation,
     metrics,
     operationalMetrics,
     readiness,

@@ -22,6 +22,13 @@ function renderPage() {
   )
 }
 
+function renderSelected(isStartingInvestigation: boolean, onStartInvestigation = vi.fn(async () => undefined)) {
+  render(
+    <IncidentsPage incidents={incidents} investigations={investigations} isCreateFormOpen={false} isStartingInvestigation={isStartingInvestigation} onCloseCreateForm={vi.fn()} onCreateIncident={vi.fn()} onSelectIncident={vi.fn()} onStartInvestigation={onStartInvestigation} selectedIncident={incidents[1]} />,
+  )
+  return onStartInvestigation
+}
+
 describe('IncidentsPage queue', () => {
   it('lists the most severe incident first and shows its latest investigation state', () => {
     renderPage()
@@ -30,6 +37,24 @@ describe('IncidentsPage queue', () => {
     expect(items.map((item) => item.querySelector('strong')?.textContent)).toEqual(['Checkout down', 'Login failures', 'Email delays'])
     expect(items[0]).toHaveTextContent('Investigated')
     expect(items[1]).toHaveTextContent('Not investigated')
+  })
+
+  it('disables the launch button while the start request is in flight', async () => {
+    const onStart = renderSelected(true)
+
+    const launch = screen.getByRole('button', { name: /investigation/i })
+    expect(launch).toBeDisabled()
+    await userEvent.setup().click(launch)
+    expect(onStart).not.toHaveBeenCalled()
+  })
+
+  it('launches the investigation when no start is in flight', async () => {
+    const onStart = renderSelected(false)
+
+    const launch = screen.getByRole('button', { name: 'Launch multi-agent investigation' })
+    expect(launch).toBeEnabled()
+    await userEvent.setup().click(launch)
+    expect(onStart).toHaveBeenCalledTimes(1)
   })
 
   it('filters the queue by severity', async () => {

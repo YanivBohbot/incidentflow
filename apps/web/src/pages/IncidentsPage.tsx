@@ -29,6 +29,8 @@ type IncidentsPageProps = {
   onSelectIncident: (incident: Incident) => void
   onStartInvestigation: () => Promise<void>
   isCreateFormOpen: boolean
+  /** True while the start request is in flight, so a double click cannot queue twice. */
+  isStartingInvestigation?: boolean
   onCloseCreateForm: () => void
 }
 
@@ -36,7 +38,7 @@ type IncidentsPageProps = {
  * Two columns at the same height: the incident queue (step 1) on the left, and on the right
  * either the report form or the selected incident with its launch button (step 2).
  */
-export function IncidentsPage({ incidents, investigations, selectedIncident, onCreateIncident, onSelectIncident, onStartInvestigation, isCreateFormOpen, onCloseCreateForm }: IncidentsPageProps) {
+export function IncidentsPage({ incidents, investigations, selectedIncident, onCreateIncident, onSelectIncident, onStartInvestigation, isCreateFormOpen, isStartingInvestigation = false, onCloseCreateForm }: IncidentsPageProps) {
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('ALL')
 
   async function createAndSelect(data: Pick<Incident, 'title' | 'description' | 'priority'>) {
@@ -115,7 +117,9 @@ export function IncidentsPage({ incidents, investigations, selectedIncident, onC
               This description is sent to the Investigation Supervisor, which chooses the specialist agents.
               Ask for a Jira write explicitly (for example “create a Jira issue in project SAM1”) and it will pause for your approval.
             </small>
-            <button className="primary-button" onClick={() => void onStartInvestigation()} type="button">Launch multi-agent investigation</button>
+            <button className="primary-button" disabled={isStartingInvestigation} onClick={() => void onStartInvestigation()} type="button">
+              {isStartingInvestigation ? 'Queueing the investigation…' : 'Launch multi-agent investigation'}
+            </button>
           </div>
         ) : (
           <EmptyState description="Select an incident in the queue to see its details and launch the investigation." title="STEP 2 · Select an incident" />

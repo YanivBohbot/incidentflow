@@ -127,6 +127,37 @@ describe('useIncidentFlow queued investigations', () => {
     expect(result.current.investigations.map((item) => item.id)).toEqual(['inv-1'])
   })
 
+  it('sends one start request while a start is in flight', async () => {
+    let release: () => void = () => undefined
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const fetchMock = mockApi({
+      ...baseRoutes(() => []),
+      'POST /api/investigations': () => ({ status: 202, body: investigation('PENDING') }),
+    })
+    const { result } = renderHook(() => useIncidentFlow())
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    act(() => result.current.setSelectedIncident(incident))
+    const routed = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') await gate
+      return routed(url, init)
+    })
+
+    let first: Promise<unknown> = Promise.resolve()
+    let second: Promise<unknown> = Promise.resolve()
+    act(() => {
+      first = result.current.startInvestigation()
+      second = result.current.startInvestigation()
+    })
+    await waitFor(() => expect(result.current.isStartingInvestigation).toBe(true))
+    expect(await second).toBeNull()
+    await act(async () => { release(); await first })
+
+    const posts = fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')
+    expect(posts).toHaveLength(1)
+    expect(result.current.isStartingInvestigation).toBe(false)
+  })
+
   it('accepts the queued response when resolving a review', async () => {
     const paused = investigation('AWAITING_HUMAN_REVIEW')
     const { result } = await setup({
