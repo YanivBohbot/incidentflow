@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from incidentflow.agent.orchestration.policies.human_review import (
@@ -20,7 +21,11 @@ from incidentflow.domain.human_review.models import (
     HumanReviewType,
 )
 from incidentflow.domain.incidents.models import IncidentPriority
-from incidentflow.domain.investigations.models import InvestigationLifecycle, InvestigationStart
+from incidentflow.domain.investigations.models import (
+    InvestigationCreate,
+    InvestigationLifecycle,
+    InvestigationStart,
+)
 from incidentflow.infrastructure.database.base import Base
 from incidentflow.infrastructure.database.incident_repository import IncidentRepository
 from incidentflow.infrastructure.database.investigation_repository import (
@@ -262,3 +267,75 @@ def test_concurrent_start_maps_integrity_error_to_already_active() -> None:
 
         assert error.value.investigation_id == first.id
         assert queue.sent == [first.id]
+
+
+def test_start_during_pending_review_is_rejected() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        incident = create_incident(session)
+        queue = InMemoryJobQueue()
+        service = make_service(session, queue)
+        paused = service.start_investigation(start_data(incident))
+        force_awaiting(session, paused.id, jira_review())
+
+        with pytest.raises(InvestigationAlreadyActiveError) as error:
+            service.start_investigation(start_data(incident))
+
+        assert error.value.investigation_id == paused.id
+        assert queue.sent == [paused.id]
+
+
+def test_resume_while_another_investigation_is_active_is_rejected() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        incident = create_incident(session)
+        queue = InMemoryJobQueue()
+        service = make_service(session, queue)
+        paused = service.start_investigation(start_data(incident))
+        force_awaiting(session, paused.id, jira_review())
+        # Legacy state from before starts were blocked during a review.
+        other = InvestigationRepository(session).create_investigation(
+            InvestigationCreate(
+                incident_id=incident.id,
+                incident_request="Investigate again.",
+                incident_business_status="OPEN",
+            )
+        )
+        decision = HumanReviewDecision(decision="REJECT", actor="on-call-operator")
+
+        with pytest.raises(InvestigationAlreadyActiveError) as error:
+            service.request_human_review_resume(paused.id, decision)
+
+        assert error.value.investigation_id == other.id
+        assert queue.sent == [paused.id]
+        session.expire_all()
+        row = session.get(InvestigationORM, paused.id)
+        assert row.lifecycle is InvestigationLifecycle.AWAITING_HUMAN_REVIEW
+        assert row.pending_resume_payload is None
+        assert row.pending_human_review_payload is not None
+
+
+def test_start_reraises_unrelated_integrity_errors() -> None:
+    class BrokenRepository(InvestigationRepository):
+        def create_investigation(self, data):
+            raise IntegrityError(
+                "INSERT ...",
+                {},
+                Exception("UNIQUE constraint failed: investigations.workflow_thread_id"),
+            )
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        incident = create_incident(session)
+        queue = InMemoryJobQueue()
+        service = InvestigationService(
+            BrokenRepository(session), IncidentRepository(session), queue, object()
+        )
+
+        with pytest.raises(IntegrityError):
+            service.start_investigation(start_data(incident))
+
+        assert queue.sent == []

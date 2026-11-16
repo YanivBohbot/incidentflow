@@ -33,9 +33,10 @@ docker compose up --build -d
 docker compose ps
 ```
 
-The migration service exits successfully after applying `alembic upgrade head`.
-ElasticMQ starts in parallel. The API then starts, opens the PostgreSQL LangGraph checkpointer,
-and calls `checkpointer.setup()` for the checkpoint tables. The worker starts alongside it.
+The migration service runs `python -m incidentflow.migrate` once: it applies
+`alembic upgrade head`, then creates the LangGraph checkpoint tables (`checkpointer.setup()`), and
+exits successfully. ElasticMQ starts in parallel. The API and the worker then start and open the
+PostgreSQL LangGraph checkpointer; they do not create tables themselves.
 
 - Web application: `http://127.0.0.1:5173`
 - API health: `http://127.0.0.1:8000/health`

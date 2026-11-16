@@ -182,3 +182,23 @@ def test_second_resolve_is_rejected_with_409() -> None:
 
     assert response.status_code == 409
     assert response.json()["detail"] == "Investigation is not awaiting a human review."
+
+
+def test_resolve_while_another_investigation_is_active_returns_409() -> None:
+    class ConflictingService(FakeInvestigationService):
+        def request_human_review_resume(self, investigation_id: UUID, decision):
+            raise InvestigationAlreadyActiveError(uuid4())
+
+    service = ConflictingService()
+    app = FastAPI()
+    app.include_router(router, prefix="/api")
+    app.dependency_overrides[get_investigation_service] = lambda: service
+    client = TestClient(app)
+
+    response = client.post(
+        f"/api/investigations/{service.investigation_id}/human-review/resolve",
+        json={"decision": "REJECT", "actor": "on-call-operator"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "An investigation is already running for this incident."

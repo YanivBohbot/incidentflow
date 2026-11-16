@@ -19,6 +19,7 @@ from incidentflow.domain.investigations.models import (
 from incidentflow.infrastructure.database.base import Base
 from incidentflow.infrastructure.database.investigation_repository import (
     InvestigationRepository,
+    is_active_investigation_conflict,
 )
 from incidentflow.infrastructure.database.models import IncidentORM, InvestigationORM
 
@@ -155,6 +156,51 @@ def test_has_active_investigation(session: Session, incident_id: UUID) -> None:
     assert repo.has_active_investigation(incident_id) is True
     repo.complete_investigation(inv_id, REPORT, lease_token=claimed.lease_token)
     assert repo.has_active_investigation(incident_id) is False
+
+
+def test_pending_review_counts_as_active(session: Session, incident_id: UUID) -> None:
+    repo = InvestigationRepository(session)
+    inv_id = _create(repo, incident_id)
+    claimed = repo.claim(inv_id, lease_seconds=300)
+    repo.mark_awaiting_human_review(inv_id, REPORT, REVIEW, lease_token=claimed.lease_token)
+
+    assert repo.has_active_investigation(incident_id) is True
+
+
+def test_resume_into_an_active_incident_rolls_back(session: Session, incident_id: UUID) -> None:
+    repo = InvestigationRepository(session)
+    paused = _create(repo, incident_id)
+    claimed = repo.claim(paused, lease_seconds=300)
+    repo.mark_awaiting_human_review(paused, REPORT, REVIEW, lease_token=claimed.lease_token)
+    _create(repo, incident_id)  # legacy state: a second row started during the review
+
+    with pytest.raises(IntegrityError) as error:
+        repo.request_resume(paused, {"command_resume": {}})
+
+    assert is_active_investigation_conflict(error.value)
+    session.expire_all()
+    row = session.get(InvestigationORM, paused)
+    assert row.lifecycle is AWAITING and row.pending_resume_payload is None
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        (
+            'duplicate key value violates unique constraint "uq_investigations_active_incident"',
+            True,
+        ),
+        ("UNIQUE constraint failed: investigations.incident_id", True),
+        ("UNIQUE constraint failed: investigations.workflow_thread_id", False),
+        ('duplicate key value violates unique constraint "investigations_pkey"', False),
+    ],
+)
+def test_is_active_investigation_conflict_matches_only_the_active_index(
+    message: str, expected: bool
+) -> None:
+    error = IntegrityError("INSERT ...", {}, Exception(message))
+
+    assert is_active_investigation_conflict(error) is expected
 
 
 def test_stale_ids_cover_old_pending_and_expired_running(session: Session) -> None:

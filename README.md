@@ -207,7 +207,8 @@ cd incidentflow
    docker compose ps
    ```
 
-   Compose starts PostgreSQL, runs `alembic upgrade head` once, then starts ElasticMQ (the local
+   Compose starts PostgreSQL, runs `python -m incidentflow.migrate` once (Alembic migrations, then
+   the LangGraph checkpoint tables), then starts ElasticMQ (the local
    SQS-compatible job queue), the API, the investigation worker, the web app, and Keycloak.
 
 | Service         | URL                                  |
@@ -238,11 +239,12 @@ details.
    source .venv/bin/activate          # Windows: .venv\Scripts\Activate.ps1
    pip install -e ".[dev]"
    cp .env.example .env               # then set OPENAI_API_KEY and DATABASE_URL
-   alembic upgrade head
+   python -m incidentflow.migrate     # alembic upgrade head + LangGraph checkpoint tables
    uvicorn incidentflow.main:app --reload
    ```
 
-   On startup, the API opens the LangGraph PostgreSQL checkpointer and creates its tables. The
+   Run the migrate step once per schema change; the API and worker only open the LangGraph
+   PostgreSQL checkpointer and never create its tables. The
    example `.env` already points `SQS_ENDPOINT_URL` and `JOB_QUEUE_URL` at ElasticMQ on
    `localhost:9324`; no AWS credentials are needed for it.
 

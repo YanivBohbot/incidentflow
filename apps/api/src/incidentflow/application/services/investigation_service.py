@@ -17,16 +17,16 @@ from incidentflow.domain.investigations.models import (
 )
 from incidentflow.infrastructure.database.incident_repository import IncidentRepository
 from incidentflow.infrastructure.database.investigation_repository import (
+    START_BLOCKING_LIFECYCLES,
     InvestigationRepository,
+    is_active_investigation_conflict,
 )
 
 logger = logging.getLogger(__name__)
 
-ACTIVE_LIFECYCLES = (InvestigationLifecycle.PENDING, InvestigationLifecycle.RUNNING)
-
 
 class InvestigationAlreadyActiveError(Exception):
-    """The incident already has a PENDING or RUNNING investigation."""
+    """The incident already has a PENDING, RUNNING, or AWAITING_HUMAN_REVIEW investigation."""
 
     def __init__(self, investigation_id: UUID) -> None:
         super().__init__(f"Investigation {investigation_id} is already active.")
@@ -63,16 +63,20 @@ class InvestigationService:
         except IntegrityError as error:
             # Another API instance inserted an active row after the check above; the unique
             # index uq_investigations_active_incident rejected this one.
+            if not is_active_investigation_conflict(error):
+                raise
             raise self._already_active(incident.id) from error
         self._enqueue(investigation.id)
         return investigation
 
-    def _already_active(self, incident_id: UUID) -> InvestigationAlreadyActiveError:
+    def _already_active(
+        self, incident_id: UUID, *, excluding: UUID | None = None
+    ) -> InvestigationAlreadyActiveError:
         active = next(
             (
                 item
                 for item in self.repository.list_for_incident(incident_id)
-                if item.lifecycle in ACTIVE_LIFECYCLES
+                if item.lifecycle in START_BLOCKING_LIFECYCLES and item.id != excluding
             ),
             None,
         )
@@ -109,7 +113,16 @@ class InvestigationService:
             "review_type": review.review_type.value if review else None,
             "decision": decision.decision.value,
         }
-        resumed = self.repository.request_resume(investigation_id, payload)
+        try:
+            resumed = self.repository.request_resume(investigation_id, payload)
+        except IntegrityError as error:
+            # Legacy state: another row on this incident started during the review. The
+            # rollback leaves this one paused, without the stored decision.
+            if not is_active_investigation_conflict(error):
+                raise
+            raise self._already_active(
+                investigation.incident_id, excluding=investigation_id
+            ) from error
         if resumed is None:
             return None
         self._enqueue(resumed.id)

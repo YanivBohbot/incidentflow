@@ -17,6 +17,18 @@ from incidentflow.infrastructure.database.models import InvestigationORM
 
 RUNNING = InvestigationLifecycle.RUNNING
 PENDING = InvestigationLifecycle.PENDING
+AWAITING_HUMAN_REVIEW = InvestigationLifecycle.AWAITING_HUMAN_REVIEW
+# A paused review resumes into PENDING, so it blocks a new start just like queued or running work.
+START_BLOCKING_LIFECYCLES = (PENDING, RUNNING, AWAITING_HUMAN_REVIEW)
+ACTIVE_INVESTIGATION_INDEX = "uq_investigations_active_incident"
+# SQLite names the indexed column instead of the partial index.
+_SQLITE_ACTIVE_INVESTIGATION_CONFLICT = "UNIQUE constraint failed: investigations.incident_id"
+
+
+def is_active_investigation_conflict(error: IntegrityError) -> bool:
+    """True when the error comes from the one-active-investigation-per-incident index."""
+    message = str(error.orig)
+    return ACTIVE_INVESTIGATION_INDEX in message or _SQLITE_ACTIVE_INVESTIGATION_CONFLICT in message
 
 
 def _lease_expired(now: datetime):
@@ -83,12 +95,7 @@ class InvestigationRepository:
             workflow_thread_id=f"investigation:{investigation_id}",
         )
         self.session.add(orm)
-        try:
-            self.session.commit()
-        except IntegrityError:
-            # e.g. uq_investigations_active_incident: the incident already has an active row.
-            self.session.rollback()
-            raise
+        self._commit()
         self.session.refresh(orm)
         return self.to_domain(orm)
 
@@ -115,20 +122,33 @@ class InvestigationRepository:
             select(InvestigationORM.id)
             .where(
                 InvestigationORM.incident_id == incident_id,
-                InvestigationORM.lifecycle.in_([PENDING, RUNNING]),
+                InvestigationORM.lifecycle.in_(START_BLOCKING_LIFECYCLES),
             )
             .limit(1)
         )
         return self.session.scalars(statement).first() is not None
 
+    def _commit(self) -> None:
+        """Commit, or roll back and re-raise so the session stays usable after a conflict."""
+        try:
+            self.session.commit()
+        except IntegrityError:
+            # e.g. uq_investigations_active_incident: the incident already has an active row.
+            self.session.rollback()
+            raise
+
     def _apply(self, investigation_id: UUID, *conditions, **values) -> Investigation | None:
         """Run one conditional UPDATE; return the re-read row only if it matched."""
-        result = self.session.execute(
-            update(InvestigationORM)
-            .where(InvestigationORM.id == investigation_id, *conditions)
-            .values(**values)
-        )
-        self.session.commit()
+        try:
+            result = self.session.execute(
+                update(InvestigationORM)
+                .where(InvestigationORM.id == investigation_id, *conditions)
+                .values(**values)
+            )
+        except IntegrityError:
+            self.session.rollback()
+            raise
+        self._commit()
         if result.rowcount != 1:
             return None
         self.session.expire_all()
@@ -242,7 +262,7 @@ class InvestigationRepository:
         """Re-queue an investigation waiting on an operator; attempts restart at zero."""
         return self._apply(
             investigation_id,
-            InvestigationORM.lifecycle == InvestigationLifecycle.AWAITING_HUMAN_REVIEW,
+            InvestigationORM.lifecycle == AWAITING_HUMAN_REVIEW,
             lifecycle=PENDING,
             pending_resume_payload=resume_payload,
             pending_human_review_payload=None,

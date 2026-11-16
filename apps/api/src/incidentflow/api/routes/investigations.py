@@ -25,6 +25,8 @@ from incidentflow.infrastructure.database.investigation_repository import Invest
 from incidentflow.infrastructure.database.session import SessionLocal
 from incidentflow.knowledge.resolved_incident_store import ResolvedIncidentStore
 
+ALREADY_ACTIVE_DETAIL = "An investigation is already running for this incident."
+
 
 def get_db_session() -> Iterator[Session]:
     """Provide one database session for the duration of an API request."""
@@ -89,7 +91,7 @@ def start_investigation(
     except InvestigationAlreadyActiveError as error:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="An investigation is already running for this incident.",
+            detail=ALREADY_ACTIVE_DETAIL,
         ) from error
     if investigation is None:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -129,6 +131,10 @@ def resolve_human_review(
     """Queue the resume of one paused investigation with an explicit authenticated-operator decision."""
     try:
         investigation = service.request_human_review_resume(investigation_id, decision)
+    except InvestigationAlreadyActiveError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=ALREADY_ACTIVE_DETAIL
+        ) from error
     except ValueError as error:  # an edit outside the permitted Jira fields
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
