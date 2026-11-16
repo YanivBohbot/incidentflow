@@ -1,3 +1,4 @@
+import pytest
 from langchain.agents.middleware import ModelCallLimitMiddleware, ToolCallLimitMiddleware
 from langchain_core.tools import tool
 
@@ -129,7 +130,7 @@ def test_ask_data_intelligence_runs_the_subagent_and_classifies_what_it_read(mon
         )
 
     class FakeClient:
-        def __init__(self, *_args: object) -> None:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
             pass
 
         @asynccontextmanager
@@ -161,3 +162,42 @@ def test_ask_data_intelligence_runs_the_subagent_and_classifies_what_it_read(mon
     assert calls == ["collection-schema", "aggregate"]
     assert result.data_classification == "synthetic"
     assert result.summary == "Redis failover caused cache misses."
+
+
+def test_data_intelligence_tool_passes_stdio_settings(monkeypatch) -> None:
+    import asyncio
+
+    from incidentflow.agent.tools import data_intelligence_tools
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql+psycopg://incidentflow:password@localhost:5432/incidentflow_test",
+    )
+    monkeypatch.setenv("MONGODB_MCP_TRANSPORT", "stdio")
+    monkeypatch.setenv("MONGODB_MCP_COMMAND", "mongodb-mcp-server")
+    monkeypatch.setenv("MONGODB_MCP_COMMAND_ARGS", "--readOnly, --telemetry=disabled")
+    get_settings.cache_clear()
+    captured: dict[str, object] = {}
+
+    class StopHere(Exception):
+        pass
+
+    class CapturingClient:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            captured["args"] = args
+            captured["kwargs"] = kwargs
+
+        def read_tools(self):
+            raise StopHere
+
+    monkeypatch.setattr(data_intelligence_tools, "MongoDBMCPClient", CapturingClient)
+
+    with pytest.raises(StopHere):
+        asyncio.run(data_intelligence_tools._investigate_with_data_agent("ctx", None, {}))
+
+    assert captured["kwargs"] == {
+        "command": "mongodb-mcp-server",
+        "command_args": ("--readOnly", "--telemetry=disabled"),
+    }
+    get_settings.cache_clear()

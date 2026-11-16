@@ -1,5 +1,6 @@
 """Read-only client for the official MongoDB MCP Server."""
 
+import os
 import re
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
@@ -8,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastmcp import Client
+from fastmcp.client import StdioTransport
 from langchain.mcp import MCPAdapter
 from langchain_core.tools import BaseTool, StructuredTool
 
@@ -41,12 +43,40 @@ class MongoDBMCPToolSet:
 class MongoDBMCPClient:
     """Discover and restrict MongoDB MCP tools to operational read operations."""
 
-    def __init__(self, server_url: str, connection_string: str) -> None:
-        """Store the MCP endpoint and the connection string used only by the client."""
+    def __init__(
+        self,
+        server_url: str | None,
+        connection_string: str,
+        *,
+        command: str | None = None,
+        command_args: tuple[str, ...] = (),
+    ) -> None:
+        """Store how to reach the server and the connection string used only by the client.
+
+        A configured command runs the server as a subprocess over stdio (AWS Lambda); otherwise
+        the client talks HTTP to ``server_url``.
+        """
+        if not command and not server_url:
+            raise ValueError("MongoDB MCP requires a server URL or a stdio command.")
         self.server_url = server_url
         self.connection_string = connection_string
+        self.command = command
+        self.command_args = command_args
+
+    def environment(self) -> dict[str, str]:
+        """Build the subprocess environment; the connection string stays out of it and argv."""
+        environment = dict(os.environ)
+        home = environment.get("HOME")
+        if not home or not os.access(home, os.W_OK):
+            environment["HOME"] = "/tmp"  # Lambda's filesystem is read-only outside /tmp.
+        environment["MDB_MCP_LOG_PATH"] = "/tmp/mongodb-mcp"
+        return environment
 
     def _client(self) -> Client:
+        if self.command:
+            return Client(
+                StdioTransport(self.command, list(self.command_args), env=self.environment())
+            )
         return Client(self.server_url)
 
     @asynccontextmanager

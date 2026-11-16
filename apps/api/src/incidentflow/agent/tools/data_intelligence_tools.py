@@ -117,9 +117,14 @@ async def _investigate_with_data_agent(
         settings.mongodb_mcp_database,
         settings.mongodb_mcp_events_collection,
     )
-    async with MongoDBMCPClient(
-        settings.mongodb_mcp_url, settings.mongodb_mcp_connection_string
-    ).read_tools() as tool_set:
+    use_stdio = settings.mongodb_mcp_transport == "stdio"
+    client = MongoDBMCPClient(
+        settings.mongodb_mcp_url,
+        settings.mongodb_mcp_connection_string,
+        command=settings.mongodb_mcp_command if use_stdio else None,
+        command_args=settings.mongodb_mcp_stdio_arguments if use_stdio else (),
+    )
+    async with client.read_tools() as tool_set:
         agent = build_data_intelligence_agent(tool_set.read_tools)
         result = await agent.ainvoke(
             {"messages": [HumanMessage(content=task)]}, config=subagent_config(config)
@@ -153,7 +158,9 @@ async def ask_data_intelligence(
     settings = get_settings()
     if settings.mongodb_mcp_enabled:
         try:
-            finding_json = await _investigate_with_data_agent(incident_context, service_name, config)
+            finding_json = await _investigate_with_data_agent(
+                incident_context, service_name, config
+            )
             return finding_json
         except Exception:
             logger.exception("MongoDB specialist delegation failed")

@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     cloudwatch_mcp_timeout_seconds: float = 90
     cloudwatch_mcp_log_groups: str = ""
     cloudwatch_mcp_lookback_minutes: int = 60
+    mongodb_mcp_transport: Literal["http", "stdio"] = "http"
+    mongodb_mcp_command: str = "mongodb-mcp-server"
+    mongodb_mcp_command_args: str = "--readOnly"
     mongodb_mcp_url: str = "http://127.0.0.1:3000/mcp"
     mongodb_mcp_enabled: bool = False
     mongodb_mcp_connection_string: str = "mongodb://127.0.0.1:27017/?directConnection=true"
@@ -149,6 +152,15 @@ class Settings(BaseSettings):
         return tuple(
             argument.strip()
             for argument in self.cloudwatch_mcp_command_args.split(",")
+            if argument.strip()
+        )
+
+    @property
+    def mongodb_mcp_stdio_arguments(self) -> tuple[str, ...]:
+        """Return the comma-separated MongoDB MCP command arguments."""
+        return tuple(
+            argument.strip()
+            for argument in self.mongodb_mcp_command_args.split(",")
             if argument.strip()
         )
 

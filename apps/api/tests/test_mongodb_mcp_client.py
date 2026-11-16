@@ -1,9 +1,12 @@
 import pytest
+from fastmcp.client import StdioTransport
+from fastmcp.client.transports import StreamableHttpTransport
 from langchain_core.tools import tool
 
 from incidentflow.agent.mcp_clients.mongodb import (
     MONGODB_READ_TOOL_NAMES,
     MONGODB_TOOL_DESCRIPTIONS,
+    MongoDBMCPClient,
     _connection_id_from_result,
     _openai_compatible_schema,
     _remove_connection_id,
@@ -69,12 +72,52 @@ def test_connection_id_is_extracted_and_hidden_from_the_model_schema() -> None:
 
     _remove_connection_id(schema)
 
-    assert _connection_id_from_result(
-        [{"text": 'Successfully connected. Your connectionId is "connection-123".'}]
-    ) == "connection-123"
+    assert (
+        _connection_id_from_result(
+            [{"text": 'Successfully connected. Your connectionId is "connection-123".'}]
+        )
+        == "connection-123"
+    )
     assert schema == {
         "type": "object",
         "properties": {"database": {"type": "string"}},
         "required": ["database"],
     }
     assert "connectionId" not in schema["properties"]
+
+
+def test_stdio_transport_when_command_configured(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "missing"))
+    client = MongoDBMCPClient(
+        None,
+        "mongodb://secret-host/",
+        command="mongodb-mcp-server",
+        command_args=("--readOnly",),
+    )
+
+    transport = client._client().transport
+
+    assert isinstance(transport, StdioTransport)
+    assert transport.command == "mongodb-mcp-server"
+    assert transport.args == ["--readOnly"]
+    assert transport.env["HOME"] == "/tmp"
+    assert transport.env["MDB_MCP_LOG_PATH"] == "/tmp/mongodb-mcp"
+    assert "mongodb://secret-host/" not in transport.args
+
+
+def test_stdio_environment_keeps_a_writable_home(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    client = MongoDBMCPClient(None, "mongodb://x/", command="mongodb-mcp-server")
+
+    assert client.environment()["HOME"] == str(tmp_path)
+
+
+def test_http_transport_by_default() -> None:
+    client = MongoDBMCPClient("http://127.0.0.1:3000/mcp", "mongodb://x/")
+
+    assert isinstance(client._client().transport, StreamableHttpTransport)
+
+
+def test_requires_url_or_command() -> None:
+    with pytest.raises(ValueError, match="server URL or a stdio command"):
+        MongoDBMCPClient(None, "mongodb://x/")
