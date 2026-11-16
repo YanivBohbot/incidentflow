@@ -70,6 +70,9 @@ temp/
 apps/api/knowledge_sources/*
 !apps/api/knowledge_sources/.gitkeep
 
+# AWS CDK synthesis output
+cdk.out/
+
 # Docker local overrides
 docker-compose.override.yml
 compose.override.yaml
