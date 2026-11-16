@@ -63,10 +63,11 @@ def verify_access_token(
     token: str, settings: Settings, *, jwks_client: PyJWKClient | None = None
 ) -> Principal:
     """Verify a Cognito access token's signature, issuer, expiry, use and client."""
-    issuer = settings.oidc_issuer_url
     client_id = settings.oidc_client_id
-    if not issuer or not client_id:
+    if not settings.oidc_issuer_url or not client_id:
         raise AuthenticationError("OIDC issuer and client id are not configured.")
+    # Cognito's iss has no trailing slash; tolerate one in the setting.
+    issuer = settings.oidc_issuer_url.rstrip("/")
     client = jwks_client or _cached_jwks_client(jwks_url(issuer))
     try:
         signing_key = client.get_signing_key_from_jwt(token)

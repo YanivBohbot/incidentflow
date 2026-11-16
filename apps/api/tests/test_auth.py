@@ -191,6 +191,44 @@ def test_id_token_rejected(auth_enabled, service) -> None:
     assert_authentication_required(start(build_client(service), bearer(token)))
 
 
+def test_access_token_check_rejects_other_token_use(auth_enabled, service) -> None:
+    token = make_token(token_use="id")
+
+    assert_authentication_required(start(build_client(service), bearer(token)))
+
+
+def test_issuer_setting_with_trailing_slash_still_verifies(
+    auth_enabled, monkeypatch: pytest.MonkeyPatch, service
+) -> None:
+    monkeypatch.setenv("OIDC_ISSUER_URL", f"{ISSUER}/")
+    get_settings.cache_clear()
+
+    assert start(build_client(service), bearer(make_token())).status_code == 202
+
+
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [
+        ("/api/incidents", {}),
+        ("/api/investigations/{id}/human-review/resolve", {"decision": "APPROVE", "actor": "x"}),
+        ("/api/investigations/{id}/memory-lessons", {}),
+    ],
+)
+def test_viewer_cannot_operate_returns_403(
+    auth_enabled, service, path: str, body: dict[str, str]
+) -> None:
+    client = build_client(service)
+    token = make_token(**{"cognito:groups": ["viewer"]})
+
+    response = client.post(
+        path.format(id=service.investigation_id), json=body, headers=bearer(token)
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Not allowed."}
+    assert service.resolved_actors == []
+
+
 def test_viewer_cannot_start_returns_403(auth_enabled, service) -> None:
     client = build_client(service)
     token = make_token(**{"cognito:groups": ["viewer"]})
