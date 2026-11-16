@@ -25,6 +25,30 @@ def test_health_returns_ok(monkeypatch) -> None:
     assert response.json() == {"status": "ok"}
 
 
+def test_module_app_loads_ssm_secrets_before_settings(monkeypatch) -> None:
+    from incidentflow.core import ssm
+
+    def fake_loader(path: str) -> list[str]:
+        assert path == "/incidentflow"
+        monkeypatch.setenv("APP_NAME", "IncidentFlow from SSM")
+        return ["APP_NAME"]
+
+    main = importlib.import_module("incidentflow.main")
+    monkeypatch.setenv(ssm.SSM_PATH_ENV, "/incidentflow")
+    monkeypatch.setattr(ssm, "load_ssm_parameters_into_environ", fake_loader)
+    get_settings()  # Cached before the secrets arrive; the module must not reuse it.
+
+    try:
+        reloaded = importlib.reload(main)
+        assert reloaded.app.title == "IncidentFlow from SSM"
+    finally:
+        # Leave a module-level app built from the normal test settings for later tests.
+        monkeypatch.delenv(ssm.SSM_PATH_ENV)
+        monkeypatch.delenv("APP_NAME", raising=False)
+        get_settings.cache_clear()
+        importlib.reload(main)
+
+
 @pytest.mark.anyio
 async def test_app_lifespan_opens_checkpointer_and_shares_workflow(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")

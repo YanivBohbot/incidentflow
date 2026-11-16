@@ -3,6 +3,9 @@
 import os
 from typing import Any
 
+# Set on AWS (by CDK) to the parameter path holding the secrets, e.g. ``/incidentflow``.
+SSM_PATH_ENV = "INCIDENTFLOW_SSM_PATH"
+
 
 def load_ssm_parameters_into_environ(path: str, *, client: Any | None = None) -> list[str]:
     """Copy parameters under ``path`` into ``os.environ`` and return the names it set.
@@ -28,3 +31,19 @@ def load_ssm_parameters_into_environ(path: str, *, client: Any | None = None) ->
         if not token:
             return loaded
         request["NextToken"] = token
+
+
+def load_ssm_secrets_if_configured() -> list[str]:
+    """Load ``INCIDENTFLOW_SSM_PATH`` parameters when it is set (on AWS); no-op otherwise.
+
+    Call this before anything reads settings. A settings object cached earlier is dropped so the
+    next ``get_settings()`` sees the loaded secrets.
+    """
+    path = os.environ.get(SSM_PATH_ENV)
+    if not path:
+        return []
+    from incidentflow.core.config import get_settings
+
+    loaded = load_ssm_parameters_into_environ(path)
+    get_settings.cache_clear()
+    return loaded

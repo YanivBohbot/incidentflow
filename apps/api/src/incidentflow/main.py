@@ -17,6 +17,7 @@ from incidentflow.api.routes.investigations import router as investigations_rout
 from incidentflow.application.jobs.queue import JobQueue
 from incidentflow.core.config import Settings, get_settings
 from incidentflow.core.operational_metrics import OperationalMetrics
+from incidentflow.core.ssm import load_ssm_secrets_if_configured
 from incidentflow.infrastructure.database.investigation_repository import InvestigationRepository
 from incidentflow.infrastructure.database.session import SessionLocal
 from incidentflow.infrastructure.queue.sqs import build_job_queue
@@ -96,4 +97,6 @@ def create_app(
     return app
 
 
+# On AWS the api Lambda (uvicorn behind Lambda Web Adapter) reads its secrets from SSM first.
+load_ssm_secrets_if_configured()
 app = create_app()

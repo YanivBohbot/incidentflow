@@ -4,6 +4,7 @@ from typing import Any
 import pytest
 from sqlalchemy.pool import NullPool
 
+from incidentflow.core import ssm
 from incidentflow.core.config import Settings, get_settings
 from incidentflow.core.ssm import load_ssm_parameters_into_environ
 from incidentflow.infrastructure.database import session as session_module
@@ -44,6 +45,33 @@ def test_ssm_parameters_fill_missing_environment(monkeypatch: pytest.MonkeyPatch
     assert os.environ["DATABASE_URL"] == "preset"
     assert client.calls[0] == {"Path": "/incidentflow", "Recursive": False, "WithDecryption": True}
     assert client.calls[1]["NextToken"] == "1"
+
+
+def test_ssm_secrets_load_before_settings_when_path_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    loaded_paths: list[str] = []
+
+    def fake_loader(path: str) -> list[str]:
+        loaded_paths.append(path)
+        monkeypatch.setenv("JOB_LEASE_SECONDS", "77")
+        return ["JOB_LEASE_SECONDS"]
+
+    get_settings()  # A settings object cached before the secrets arrive must be dropped.
+    monkeypatch.setenv(ssm.SSM_PATH_ENV, "/incidentflow")
+    monkeypatch.setattr(ssm, "load_ssm_parameters_into_environ", fake_loader)
+
+    assert ssm.load_ssm_secrets_if_configured() == ["JOB_LEASE_SECONDS"]
+    assert loaded_paths == ["/incidentflow"]
+    assert get_settings().job_lease_seconds == 77
+
+
+def test_ssm_secrets_skipped_without_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unexpected_loader(_path: str) -> list[str]:
+        raise AssertionError("SSM must not be read without INCIDENTFLOW_SSM_PATH")
+
+    monkeypatch.delenv(ssm.SSM_PATH_ENV, raising=False)
+    monkeypatch.setattr(ssm, "load_ssm_parameters_into_environ", unexpected_loader)
+
+    assert ssm.load_ssm_secrets_if_configured() == []
 
 
 def test_queue_region_falls_back_to_aws_region(monkeypatch: pytest.MonkeyPatch) -> None:
