@@ -377,3 +377,115 @@ def test_handlers_skip_ssm_without_path(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(lambda_handlers, "run_migrations", lambda: None)
 
     assert lambda_handlers.migrate_handler({}, None) == {"status": "migrated"}
+
+
+class FakeTags:
+    def __init__(self, tags: dict[str, str]) -> None:
+        self.tags = tags
+
+    def tags_for(self, alarm_arn: str) -> dict[str, str]:
+        return self.tags
+
+
+def _alarm_event(name: str, state: str = "ALARM") -> dict[str, Any]:
+    return {
+        "detail-type": "CloudWatch Alarm State Change",
+        "resources": [f"arn:aws:cloudwatch:us-east-1:123456789012:alarm:{name}"],
+        "detail": {
+            "alarmName": name,
+            "state": {"value": state, "reason": "Threshold Crossed: 1 datapoint [5.0]"},
+            "configuration": {"description": "checkout-api returns 503 for most requests"},
+        },
+    }
+
+
+@pytest.fixture
+def wire_ingest(
+    monkeypatch: pytest.MonkeyPatch, sqlite_session_factory: sessionmaker[Session]
+) -> sessionmaker[Session]:
+    monkeypatch.setattr(lambda_handlers, "session_factory_provider", lambda: sqlite_session_factory)
+    monkeypatch.setattr(lambda_handlers, "alarm_tag_reader_factory", lambda: FakeTags({}))
+    return sqlite_session_factory
+
+
+def test_ingest_handler_creates_incident(wire_ingest: sessionmaker[Session]) -> None:
+    result = lambda_handlers.ingest_handler(_alarm_event("if-checkout"), None)
+
+    assert result == {"outcome": "CREATED"}
+    with wire_ingest() as session:
+        assert session.query(IncidentORM).count() == 1
+
+
+def test_ingest_handler_reports_duplicate_without_raising(wire_ingest) -> None:
+    lambda_handlers.ingest_handler(_alarm_event("if-checkout"), None)
+
+    assert lambda_handlers.ingest_handler(_alarm_event("if-checkout"), None) == {
+        "outcome": "DUPLICATE"
+    }
+
+
+def test_ingest_handler_ignores_non_alarm_state(wire_ingest) -> None:
+    result = lambda_handlers.ingest_handler(_alarm_event("if-checkout", state="OK"), None)
+
+    assert result == {"outcome": "IGNORED"}
+
+
+def test_ingest_handler_raises_on_errors_so_eventbridge_retries(
+    monkeypatch: pytest.MonkeyPatch, wire_ingest
+) -> None:
+    class BrokenTags:
+        def tags_for(self, alarm_arn: str) -> dict[str, str]:
+            raise RuntimeError("cloudwatch down")
+
+    monkeypatch.setattr(lambda_handlers, "alarm_tag_reader_factory", lambda: BrokenTags())
+
+    with pytest.raises(RuntimeError, match="cloudwatch down"):
+        lambda_handlers.ingest_handler(_alarm_event("if-checkout"), None)
+
+
+def test_ingest_handler_uses_configured_alarm_prefix(
+    monkeypatch: pytest.MonkeyPatch, wire_ingest: sessionmaker[Session]
+) -> None:
+    monkeypatch.setenv("INGEST_ALARM_PREFIX", "acme-")
+    get_settings.cache_clear()
+    try:
+        lambda_handlers.ingest_handler(_alarm_event("acme-checkout"), None)
+        with wire_ingest() as session:
+            assert session.query(IncidentORM).one().service == "checkout"
+    finally:
+        get_settings.cache_clear()
+
+
+def test_demo_handler_runs_simulator_with_event_run_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    runs: list[str] = []
+    seen_settings: list[Settings] = []
+
+    class FakeSimulator:
+        def run(self, run_id: str) -> None:
+            runs.append(run_id)
+
+    def factory(settings: Settings) -> FakeSimulator:
+        seen_settings.append(settings)
+        return FakeSimulator()
+
+    monkeypatch.setattr(lambda_handlers, "demo_simulator_factory", factory)
+
+    result = lambda_handlers.demo_handler({"run_id": "run-42"}, None)
+
+    assert result == {"run_id": "run-42"}
+    assert runs == ["run-42"]
+    assert len(seen_settings) == 1
+
+
+def test_demo_handler_generates_a_run_id_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    runs: list[str] = []
+
+    class FakeSimulator:
+        def run(self, run_id: str) -> None:
+            runs.append(run_id)
+
+    monkeypatch.setattr(lambda_handlers, "demo_simulator_factory", lambda _s: FakeSimulator())
+
+    result = lambda_handlers.demo_handler({}, None)
+
+    assert runs == [result["run_id"]] and result["run_id"]
