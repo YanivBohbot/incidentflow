@@ -2,6 +2,7 @@ import asyncio
 import warnings
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Self
 
 import pytest
 from cryptography.fernet import Fernet
@@ -165,3 +166,53 @@ def test_jira_finding_reports_reauthorization_within_bound(monkeypatch, error) -
 
     assert finding.confidence == 0
     assert "authorize_jira.py" in finding.summary
+
+
+class _ClosableStore(MemoryStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.closed = False
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class _FakeAdapter:
+    def __init__(self, client: object) -> None:
+        self.client = client
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        return None
+
+    async def list_tools(self) -> list:
+        return []
+
+
+@pytest.mark.parametrize("block_raises", [False, True], ids=["completes", "raises"])
+def test_jira_client_closes_token_store_after_adapter_block(monkeypatch, block_raises) -> None:
+    from incidentflow.agent.mcp_clients import jira
+
+    inner = _ClosableStore()
+    storage = FernetEncryptionWrapper(key_value=inner, fernet=Fernet(Fernet.generate_key()))
+    monkeypatch.setattr(jira, "build_oauth_token_storage", lambda _settings: storage)
+    monkeypatch.setattr(jira, "Client", lambda url, auth: (url, auth))
+    monkeypatch.setattr(jira, "MCPAdapter", _FakeAdapter)
+    client = JiraMCPClient("https://example.test/mcp", interactive=False)
+
+    async def use_adapter() -> None:
+        async with client._adapter():
+            assert inner.closed is False
+            if block_raises:
+                raise RuntimeError("tool call failed")
+
+    if block_raises:
+        with pytest.raises(RuntimeError, match="tool call failed"):
+            asyncio.run(use_adapter())
+    else:
+        asyncio.run(use_adapter())
+        assert asyncio.run(client.list_tools()) == []
+
+    assert inner.closed is True

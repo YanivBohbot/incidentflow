@@ -61,6 +61,14 @@ def build_oauth_token_storage(settings: Settings) -> AsyncKeyValue | None:
     return FernetEncryptionWrapper(key_value=store, fernet=Fernet(encryption_key.encode()))
 
 
+async def close_oauth_token_storage(storage: AsyncKeyValue | None) -> None:
+    """Close the store under the encryption wrapper, releasing e.g. its DynamoDB client."""
+    inner = getattr(storage, "key_value", storage)
+    close = getattr(inner, "close", None)
+    if close is not None:
+        await close()
+
+
 def _dynamodb_region(settings: Settings) -> str:
     return os.environ.get("AWS_REGION") or settings.job_queue_region or "us-east-1"
 

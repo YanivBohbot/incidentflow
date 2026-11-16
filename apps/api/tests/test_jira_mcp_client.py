@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from fastmcp.client.auth import OAuth
 from langchain_core.tools import tool
@@ -165,6 +167,6 @@ def test_jira_client_rejects_partially_configured_oauth_persistence(monkeypatch,
 
     try:
         with pytest.raises(RuntimeError, match="Configure both"):
-            JiraMCPClient("https://example.test/mcp")._client()
+            asyncio.run(JiraMCPClient("https://example.test/mcp").list_tools())
     finally:
         get_settings.cache_clear()

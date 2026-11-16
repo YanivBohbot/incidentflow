@@ -15,6 +15,7 @@ from langchain_core.tools import BaseTool, StructuredTool
 from incidentflow.agent.mcp_clients.oauth_store import (
     NonInteractiveOAuth,
     build_oauth_token_storage,
+    close_oauth_token_storage,
 )
 
 # Fixed so the redirect URI registered with Atlassian stays the same between authorizations.
@@ -64,11 +65,18 @@ class JiraMCPClient:
         self.server_url = server_url
         self.interactive = interactive
 
-    def _client(self) -> Client:
+    @asynccontextmanager
+    async def _adapter(self) -> AsyncIterator[MCPAdapter]:
+        """Connect to Jira MCP and always release the token store's connection afterwards."""
         from incidentflow.core.config import get_settings
 
         token_storage = build_oauth_token_storage(get_settings())
-        return Client(self.server_url, auth=self._oauth_auth(token_storage))
+        try:
+            client = Client(self.server_url, auth=self._oauth_auth(token_storage))
+            async with MCPAdapter(client) as adapter:
+                yield adapter
+        finally:
+            await close_oauth_token_storage(token_storage)
 
     def _oauth_auth(self, token_storage: AsyncKeyValue | None) -> str | OAuth:
         """Use the encrypted store when configured; only interactive runs may open a browser."""
@@ -95,18 +103,18 @@ class JiraMCPClient:
     @asynccontextmanager
     async def read_tools(self) -> AsyncIterator[JiraMCPToolSet]:
         """Keep the MCP connection alive while approved read tools are invoked."""
-        async with MCPAdapter(self._client()) as adapter:
+        async with self._adapter() as adapter:
             yield select_read_tools(await adapter.list_tools())
 
     @asynccontextmanager
     async def ticket_tools(self) -> AsyncIterator[JiraMCPToolSet]:
         """Keep the MCP connection alive while approved ticket writes are invoked."""
-        async with MCPAdapter(self._client()) as adapter:
+        async with self._adapter() as adapter:
             yield select_ticket_tools(await adapter.list_tools())
 
     async def list_tools(self) -> list[BaseTool]:
         """Discover tool metadata without returning tools intended for later use."""
-        async with MCPAdapter(self._client()) as adapter:
+        async with self._adapter() as adapter:
             return await adapter.list_tools()
 
 
