@@ -65,7 +65,7 @@ def build_job_queue(settings: Settings) -> JobQueue:
     client = boto3.client(
         "sqs",
         endpoint_url=endpoint_url,
-        region_name=settings.job_queue_region,
+        region_name=settings.queue_region,
         **credentials,
     )
     return SqsJobQueue(client, settings.job_queue_url)

@@ -71,10 +71,13 @@ class Settings(BaseSettings):
     # PostgreSQL
     database_url: str
     langgraph_checkpoint_database_url: str | None = None
+    # Serverless Postgres (Neon): no client-side pooling, bounded connect time.
+    database_null_pool: bool = False
+    database_connect_timeout_seconds: int = 15
     # Investigation job queue (SQS; ElasticMQ locally via SQS_ENDPOINT_URL)
     job_queue_url: str = "http://localhost:9324/000000000000/incidentflow-investigations"
     sqs_endpoint_url: str | None = None
-    job_queue_region: str = "us-east-1"
+    job_queue_region: str | None = None
     worker_concurrency: int = 2
     job_lease_seconds: int = 300
     job_max_attempts: int = 3
@@ -88,6 +91,11 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    @property
+    def queue_region(self) -> str:
+        """Explicit queue region, else the Lambda-provided AWS_REGION, else us-east-1."""
+        return self.job_queue_region or os.environ.get("AWS_REGION") or "us-east-1"
 
     @property
     def checkpoint_database_url(self) -> str:

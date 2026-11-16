@@ -1,6 +1,5 @@
 """Encrypted, durable OAuth state for the Jira MCP client and a browserless OAuth flow."""
 
-import os
 import warnings
 from pathlib import Path
 
@@ -70,7 +69,7 @@ async def close_oauth_token_storage(storage: AsyncKeyValue | None) -> None:
 
 
 def _dynamodb_region(settings: Settings) -> str:
-    return os.environ.get("AWS_REGION") or settings.job_queue_region or "us-east-1"
+    return settings.queue_region
 
 
 def _dynamodb_store(table: str, region: str) -> AsyncKeyValue:
