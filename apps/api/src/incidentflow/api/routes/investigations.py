@@ -11,6 +11,7 @@ from incidentflow.application.services.investigation_service import (
     InvestigationAlreadyActiveError,
     InvestigationService,
 )
+from incidentflow.core.auth import OperatorPrincipal, require_operator, require_viewer
 from incidentflow.core.config import get_settings
 from incidentflow.domain.human_review.models import HumanReviewDecision
 from incidentflow.domain.investigations.models import (
@@ -72,16 +73,24 @@ def get_incident_lesson_service(
 InvestigationServiceDep = Annotated[InvestigationService, Depends(get_investigation_service)]
 IncidentLessonServiceDep = Annotated[IncidentLessonService, Depends(get_incident_lesson_service)]
 
+CAN_READ = [Depends(require_viewer)]
+CAN_OPERATE = [Depends(require_operator)]
+
 router = APIRouter(prefix="/investigations", tags=["Investigations"])
 
 
-@router.get("", response_model=list[Investigation])
+@router.get("", response_model=list[Investigation], dependencies=CAN_READ)
 def list_investigations(service: InvestigationServiceDep) -> list[Investigation]:
     """Return investigations in their persisted operational order."""
     return service.list_investigations()
 
 
-@router.post("", response_model=Investigation, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "",
+    response_model=Investigation,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=CAN_OPERATE,
+)
 def start_investigation(
     data: InvestigationStart, service: InvestigationServiceDep
 ) -> Investigation:
@@ -98,7 +107,7 @@ def start_investigation(
     return investigation
 
 
-@router.get("/{investigation_id}", response_model=Investigation)
+@router.get("/{investigation_id}", response_model=Investigation, dependencies=CAN_READ)
 def get_investigation(investigation_id: UUID, service: InvestigationServiceDep) -> Investigation:
     """Return one investigation or a clear 404 when it is absent."""
     investigation = service.get_investigation(investigation_id)
@@ -107,7 +116,11 @@ def get_investigation(investigation_id: UUID, service: InvestigationServiceDep) 
     return investigation
 
 
-@router.get("/{investigation_id}/trace", response_model=list[InvestigationTraceStep])
+@router.get(
+    "/{investigation_id}/trace",
+    response_model=list[InvestigationTraceStep],
+    dependencies=CAN_READ,
+)
 async def get_investigation_trace(
     investigation_id: UUID, service: InvestigationServiceDep
 ) -> list[InvestigationTraceStep]:
@@ -126,9 +139,15 @@ async def get_investigation_trace(
 def resolve_human_review(
     investigation_id: UUID,
     decision: HumanReviewDecision,
+    principal: OperatorPrincipal,
     service: InvestigationServiceDep,
 ) -> Investigation:
-    """Queue the resume of one paused investigation with an explicit authenticated-operator decision."""
+    """Queue the resume of one paused investigation with an explicit authenticated-operator decision.
+
+    With auth enabled the recorded actor is the verified token's username, never the body's.
+    """
+    if get_settings().auth_enabled:
+        decision = decision.model_copy(update={"actor": principal.username})
     try:
         investigation = service.request_human_review_resume(investigation_id, decision)
     except InvestigationAlreadyActiveError as error:
@@ -151,6 +170,7 @@ def resolve_human_review(
     "/{investigation_id}/memory-lessons",
     response_model=IncidentLesson,
     status_code=status.HTTP_201_CREATED,
+    dependencies=CAN_OPERATE,
 )
 def confirm_incident_lesson(
     investigation_id: UUID,

@@ -134,7 +134,7 @@ flowchart LR
 | Persistence    | PostgreSQL 16, SQLAlchemy 2, Alembic, LangGraph `AsyncPostgresSaver`      |
 | Observability  | LangSmith                                                                 |
 | Web            | React 19, TypeScript, Vite, oxlint, nginx                                 |
-| Infrastructure | Docker Compose, Keycloak (identity provider, prepared for auth)           |
+| Infrastructure | Docker Compose, AWS Cognito (access tokens), optional local Keycloak      |
 | CI             | GitHub Actions: Ruff, pytest, oxlint, production web build                |
 
 ## Repository structure
@@ -313,6 +313,7 @@ The API reads its settings from `apps/api/.env`. The main variables are:
 | `DATABASE_URL`                         | yes      | `postgresql+psycopg://user:password@host:5432/db`         |
 | `LANGGRAPH_CHECKPOINT_DATABASE_URL`    | no       | Separate checkpoint database (defaults to `DATABASE_URL`) |
 | `API_PREFIX`                           | no       | Route prefix (default `/api`)                             |
+| `AUTH_ENABLED`, `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID` | no | Verify Cognito access tokens; groups `viewer` / `operator` |
 | `JIRA_MCP_ENABLED` / `JIRA_MCP_WRITE_ENABLED` | no | Enable Jira reads / approval-gated writes             |
 | `MONGODB_MCP_ENABLED`, `MONGODB_MCP_URL` | no     | MongoDB MCP server                                        |
 | `GITHUB_MCP_ENABLED`, `GITHUB_MCP_REPOSITORIES`, `GITHUB_PERSONAL_ACCESS_TOKEN` | no | GitHub MCP server and repository allowlist |

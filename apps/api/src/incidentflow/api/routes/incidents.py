@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from incidentflow.application.services.incident_service import (
     IncidentService,
 )
+from incidentflow.core.auth import require_operator, require_viewer
 from incidentflow.domain.incidents.models import (
     Incident,
     IncidentCreate,
@@ -32,6 +33,8 @@ def get_incident_service(
 
 
 IncidentServiceDep = Annotated[IncidentService, Depends(get_incident_service)]
+CAN_READ = [Depends(require_viewer)]
+CAN_OPERATE = [Depends(require_operator)]
 
 
 router = APIRouter(prefix="/incidents", tags=["Incidents"])
@@ -41,6 +44,7 @@ router = APIRouter(prefix="/incidents", tags=["Incidents"])
     "",
     response_model=Incident,
     status_code=status.HTTP_201_CREATED,
+    dependencies=CAN_OPERATE,
 )
 def create_incident(
     data: IncidentCreate,
@@ -49,14 +53,14 @@ def create_incident(
     return service.create_incident(data)
 
 
-@router.get("", response_model=list[Incident])
+@router.get("", response_model=list[Incident], dependencies=CAN_READ)
 def list_incidents(
     service: IncidentServiceDep,
 ) -> list[Incident]:
     return service.list_incidents()
 
 
-@router.get("/{incident_id}", response_model=Incident)
+@router.get("/{incident_id}", response_model=Incident, dependencies=CAN_READ)
 def get_incident(
     incident_id: UUID,
     service: IncidentServiceDep,
@@ -72,7 +76,7 @@ def get_incident(
     return incident
 
 
-@router.patch("/{incident_id}", response_model=Incident)
+@router.patch("/{incident_id}", response_model=Incident, dependencies=CAN_OPERATE)
 def update_incident(
     incident_id: UUID,
     data: IncidentUpdate,
@@ -92,6 +96,7 @@ def update_incident(
 @router.delete(
     "/{incident_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=CAN_OPERATE,
 )
 def delete_incident(
     incident_id: UUID,

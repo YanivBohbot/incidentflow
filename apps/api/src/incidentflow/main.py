@@ -33,6 +33,8 @@ def create_app(
     job_queue_factory: Callable[[Settings], JobQueue] = build_job_queue,
 ) -> FastAPI:
     settings = get_settings()
+    if settings.auth_enabled and not (settings.oidc_issuer_url and settings.oidc_client_id):
+        raise RuntimeError("AUTH_ENABLED=true requires OIDC_ISSUER_URL and OIDC_CLIENT_ID.")
     operational_metrics = OperationalMetrics()
 
     @asynccontextmanager

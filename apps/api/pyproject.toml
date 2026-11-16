@@ -40,6 +40,8 @@ dependencies = [
     "langsmith>=0.4,<1.0",
     "pypdf",
     "boto3>=1.40.46,<1.40.62",
+    # Verifies Cognito access tokens (RS256 via the user pool JWKS).
+    "PyJWT[crypto]>=2.8,<3",
 
 ]
 

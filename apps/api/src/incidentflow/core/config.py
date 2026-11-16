@@ -11,8 +11,10 @@ class Settings(BaseSettings):
     environment: str = "development"
     api_prefix: str = "/api"
     auth_enabled: bool = False
-    keycloak_issuer_url: str = "http://localhost:8080/realms/incidentflow"
-    keycloak_audience: str = "incidentflow-api"
+    # Cognito user pool issuer (https://cognito-idp.<region>.amazonaws.com/<userPoolId>) and the
+    # app client id that access tokens must carry; both are required when auth is enabled.
+    oidc_issuer_url: str | None = None
+    oidc_client_id: str | None = None
     openai_api_key: SecretStr
     openai_model: str = "gpt-4.1-mini"
     openai_timeout_seconds: float = 60
