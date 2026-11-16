@@ -221,8 +221,50 @@ def test_jira_client_closes_token_store_after_adapter_block(monkeypatch, block_r
     assert inner.closed is True
 
 
-_MCP_URL = "https://mcp.example.test/v1/mcp"
-_METADATA_URL = "https://mcp.example.test/.well-known/oauth-authorization-server"
+_MCP_URL = "https://mcp.example.test/v2/mcp?tools=all"
+_MCP_ENDPOINT = "https://mcp.example.test/v2/mcp"
+_PRM_URL = "https://mcp.example.test/.well-known/oauth-protected-resource/v2/mcp"
+_AUTH_SERVER = "https://auth.example.test/tenant-1"
+_AS_METADATA_URL = "https://auth.example.test/.well-known/oauth-authorization-server/tenant-1"
+_AS_TOKEN_URL = "https://auth.example.test/oauth/token"
+
+
+def _atlassian_like_handler(*, metadata_issuer: str = _AUTH_SERVER):
+    """Serve path-aware resource metadata naming an authorization server on another origin."""
+    import httpx2
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        url = str(request.url.copy_with(query=None))
+        if url == _PRM_URL:
+            return httpx2.Response(
+                200, json={"resource": _MCP_ENDPOINT, "authorization_servers": [_AUTH_SERVER]}
+            )
+        if url == _AS_METADATA_URL:
+            return httpx2.Response(
+                200,
+                json={
+                    "issuer": metadata_issuer,
+                    "authorization_endpoint": "https://auth.example.test/authorize",
+                    "token_endpoint": _AS_TOKEN_URL,
+                },
+            )
+        if url == _AS_TOKEN_URL and request.method == "POST":
+            return httpx2.Response(
+                200,
+                json={
+                    "access_token": "new",
+                    "token_type": "Bearer",
+                    "expires_in": 3600,
+                    "refresh_token": "r2",
+                },
+            )
+        if url == _MCP_ENDPOINT:
+            if request.headers.get("Authorization") == "Bearer new":
+                return httpx2.Response(200, json={})
+            return httpx2.Response(401)
+        return httpx2.Response(404)
+
+    return handler
 
 
 async def _seed_expired_tokens(storage: FernetEncryptionWrapper) -> None:
@@ -247,10 +289,12 @@ async def _seed_expired_tokens(storage: FernetEncryptionWrapper) -> None:
     )
 
 
-async def _request_mcp_with_stored_tokens(handler) -> tuple[list[str], int]:
+async def _request_mcp_with_stored_tokens(
+    handler, seen: list[str] | None = None
+) -> tuple[list[str], int]:
     import httpx2
 
-    seen: list[str] = []
+    seen = [] if seen is None else seen
 
     def recording_handler(request: httpx2.Request) -> httpx2.Response:
         seen.append(f"{request.method} {request.url.copy_with(query=None)}")
@@ -270,49 +314,38 @@ async def _request_mcp_with_stored_tokens(handler) -> tuple[list[str], int]:
     return seen, response.status_code
 
 
-def test_stored_token_refresh_uses_the_discovered_token_endpoint() -> None:
-    import httpx2
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        url = str(request.url.copy_with(query=None))
-        if url == _METADATA_URL:
-            return httpx2.Response(
-                200,
-                json={
-                    "issuer": "https://mcp.example.test",
-                    "authorization_endpoint": "https://mcp.example.test/v1/authorize",
-                    "token_endpoint": "https://mcp.example.test/v1/token",
-                },
-            )
-        if url == "https://mcp.example.test/v1/token":
-            return httpx2.Response(
-                200,
-                json={
-                    "access_token": "new",
-                    "token_type": "Bearer",
-                    "expires_in": 3600,
-                    "refresh_token": "r2",
-                },
-            )
-        if url == _MCP_URL and request.headers.get("Authorization") == "Bearer new":
-            return httpx2.Response(200, json={})
-        return httpx2.Response(404)
-
-    seen, status = asyncio.run(_request_mcp_with_stored_tokens(handler))
+def test_stored_token_refresh_uses_the_discovered_authorization_server() -> None:
+    seen, status = asyncio.run(_request_mcp_with_stored_tokens(_atlassian_like_handler()))
 
     assert status == 200
     assert seen == [
-        f"GET {_METADATA_URL}",
-        "POST https://mcp.example.test/v1/token",
-        f"GET {_MCP_URL}",
+        f"GET {_PRM_URL}",
+        f"GET {_AS_METADATA_URL}",
+        f"POST {_AS_TOKEN_URL}",
+        f"GET {_MCP_ENDPOINT}",
     ]
+
+
+def test_mismatched_issuer_is_not_used_for_refresh() -> None:
+    from mcp.client.auth import OAuthFlowError
+
+    handler = _atlassian_like_handler(metadata_issuer="https://evil.example.test/tenant-1")
+    seen: list[str] = []
+
+    # Nothing is cached, so the refresh falls back and fails; the SDK's own 401 discovery then
+    # rejects the same issuer, ending the flow quickly instead of trusting that server.
+    with pytest.raises(OAuthFlowError, match="issuer mismatch"):
+        asyncio.run(_request_mcp_with_stored_tokens(handler, seen))
+
+    assert f"POST {_AS_TOKEN_URL}" not in seen
+    assert "POST https://mcp.example.test/token" in seen
 
 
 def test_failed_metadata_discovery_still_fails_fast() -> None:
     import httpx2
 
     def handler(request: httpx2.Request) -> httpx2.Response:
-        if str(request.url.copy_with(query=None)) == _MCP_URL:
+        if str(request.url.copy_with(query=None)) == _MCP_ENDPOINT:
             return httpx2.Response(401)
         return httpx2.Response(404)
 

@@ -4,13 +4,23 @@ import logging
 import warnings
 from pathlib import Path
 
+import anyio
 import httpx2
 from cryptography.fernet import Fernet
 from fastmcp.client.auth import OAuth
 from key_value.aio.protocols.key_value import AsyncKeyValue
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
-from mcp.shared.auth import AuthorizationCodeResult, OAuthMetadata
-from pydantic import ValidationError
+from mcp.client.auth import OAuthFlowError
+from mcp.client.auth.utils import (
+    build_oauth_authorization_server_metadata_discovery_urls,
+    build_protected_resource_metadata_discovery_urls,
+    create_oauth_metadata_request,
+    handle_auth_metadata_response,
+    handle_protected_resource_response,
+    issuers_match,
+    validate_metadata_issuer,
+)
+from mcp.shared.auth import AuthorizationCodeResult
 
 from incidentflow.core.config import Settings
 
@@ -35,31 +45,60 @@ class RefreshingOAuth(OAuth):
 
     Relies on mcp 2.3.0 internals (`mcp/client/auth/oauth2.py`): `_auth_flow` calls
     `_refresh_token` for an expired stored token before any 401 has run metadata discovery, and
-    `_refresh_token` then falls back to `<origin>/token`, which Atlassian answers with 404. We
-    fill `context.oauth_metadata` from RFC 8414 discovery first. Re-check on an mcp upgrade.
+    `_refresh_token` then falls back to `<MCP origin>/token`, which is the wrong server for
+    Atlassian (its tokens come from auth.atlassian.com). We first run the same discovery as the
+    SDK's 401 branch, using its helpers, and cache the result on the context. Re-check on an mcp
+    upgrade.
     """
 
     async def _refresh_token(self) -> httpx2.Request:
         if self.context.oauth_metadata is None:
-            self.context.oauth_metadata = await self._discover_authorization_server_metadata()
+            with anyio.move_on_after(METADATA_DISCOVERY_TIMEOUT_SECONDS):
+                try:
+                    await self._discover_authorization_server_metadata()
+                except (httpx2.HTTPError, OAuthFlowError) as error:
+                    # The SDK's fallback then runs and, when it fails, so does the fail-fast.
+                    logger.warning("OAuth metadata discovery failed: %s", type(error).__name__)
         return await super()._refresh_token()
 
-    async def _discover_authorization_server_metadata(self) -> OAuthMetadata | None:
-        """Fetch the server's RFC 8414 metadata; None lets the SDK's own fallback proceed."""
-        base_url = self.context.get_authorization_base_url(self.context.server_url)
-        url = f"{base_url}/.well-known/oauth-authorization-server"
-        try:
-            async with self.httpx_client_factory(
-                timeout=httpx2.Timeout(METADATA_DISCOVERY_TIMEOUT_SECONDS)
-            ) as client:
-                response = await client.get(url)
-            if response.status_code != 200:
-                logger.warning("OAuth metadata discovery returned %s", response.status_code)
-                return None
-            return OAuthMetadata.model_validate_json(response.content)
-        except (httpx2.HTTPError, ValidationError) as error:
-            logger.warning("OAuth metadata discovery failed: %s", type(error).__name__)
-            return None
+    async def _discover_authorization_server_metadata(self) -> None:
+        """Mirror the SDK's 401 discovery: protected resource, then authorization server."""
+        server_url = self.context.server_url
+        async with self.httpx_client_factory(
+            timeout=httpx2.Timeout(METADATA_DISCOVERY_TIMEOUT_SECONDS)
+        ) as client:
+            for url in build_protected_resource_metadata_discovery_urls(None, server_url):
+                prm = await handle_protected_resource_response(
+                    await client.send(create_oauth_metadata_request(url))
+                )
+                if prm is not None:
+                    await self._validate_resource_match(prm)
+                    self.context.protected_resource_metadata = prm
+                    self.context.auth_server_url = self._select_authorization_server(
+                        [str(server) for server in prm.authorization_servers]
+                    )
+                    break
+
+            expected_issuer = self._expected_issuer()
+            for url in build_oauth_authorization_server_metadata_discovery_urls(
+                self.context.auth_server_url, server_url
+            ):
+                ok, metadata = await handle_auth_metadata_response(
+                    await client.send(create_oauth_metadata_request(url))
+                )
+                if not ok:
+                    return
+                if metadata is None:
+                    continue
+                # On the legacy (no resource metadata) path a root issuer with its trailing
+                # slash names the same origin, exactly as the SDK allows.
+                if self.context.auth_server_url is None and issuers_match(
+                    str(metadata.issuer), expected_issuer
+                ):
+                    expected_issuer = str(metadata.issuer)
+                validate_metadata_issuer(metadata, expected_issuer)
+                self.context.oauth_metadata = metadata
+                return
 
 
 class NonInteractiveOAuth(RefreshingOAuth):
