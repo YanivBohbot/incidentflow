@@ -42,6 +42,9 @@ dependencies = [
     "boto3>=1.40.46,<1.40.62",
     # Verifies Cognito access tokens (RS256 via the user pool JWKS).
     "PyJWT[crypto]>=2.8,<3",
+    # Lambda runtime client for the worker, sweeper, and migrate functions. It ships Linux wheels
+    # only, so Windows development installs skip it.
+    "awslambdaric>=4.2,<5; sys_platform == 'linux'",
 
 ]
 

@@ -47,6 +47,13 @@ PostgreSQL LangGraph checkpointer; they do not create tables themselves.
 The web container proxies `/api/*` to the API container, so browser requests
 remain same-origin.
 
+The `migrate`, `api`, and `worker` services use the same image that AWS Lambda runs. Its
+Lambda-only pieces are inert locally: the Lambda Web Adapter in `/opt/extensions` is started only
+by the Lambda service, `awslambdaric` is used only when a Lambda overrides the command with
+`python -m awslambdaric incidentflow.lambda_handlers.<name>`, and the bundled Node runtime with
+`mongodb-mcp-server` runs only when `MONGODB_MCP_TRANSPORT=stdio` (Compose keeps the default HTTP
+transport to a host MongoDB MCP server).
+
 If a Vite development server already uses port `5173`, set `WEB_PORT=5174` in
 the root `.env` before starting the `web` service. The web application will
 then be available at `http://127.0.0.1:5174`.
