@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -122,6 +123,19 @@ class InvestigationRepository:
             select(InvestigationORM.id)
             .where(
                 InvestigationORM.incident_id == incident_id,
+                InvestigationORM.lifecycle.in_(START_BLOCKING_LIFECYCLES),
+            )
+            .limit(1)
+        )
+        return self.session.scalars(statement).first() is not None
+
+    def has_active_investigation_among(self, incident_ids: Sequence[UUID]) -> bool:
+        if not incident_ids:
+            return False
+        statement = (
+            select(InvestigationORM.id)
+            .where(
+                InvestigationORM.incident_id.in_(incident_ids),
                 InvestigationORM.lifecycle.in_(START_BLOCKING_LIFECYCLES),
             )
             .limit(1)

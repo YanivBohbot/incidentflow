@@ -20,6 +20,11 @@ class IncidentStatus(str, Enum):
     CLOSED = "CLOSED"
 
 
+class IncidentSource(str, Enum):
+    MANUAL = "MANUAL"
+    CLOUDWATCH_ALARM = "CLOUDWATCH_ALARM"
+
+
 def utc_now() -> datetime:
     return datetime.now(UTC)
 
@@ -30,12 +35,23 @@ class IncidentCreate(BaseModel):
     priority: IncidentPriority = IncidentPriority.MEDIUM
 
 
+class AlarmIncidentCreate(BaseModel):
+    title: str = Field(min_length=5, max_length=200)
+    description: str = Field(min_length=10, max_length=5000)
+    priority: IncidentPriority
+    service: str = Field(max_length=200)
+    external_id: str = Field(max_length=512)
+
+
 class Incident(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     title: str
     description: str
     priority: IncidentPriority
     status: IncidentStatus = IncidentStatus.OPEN
+    source: IncidentSource = IncidentSource.MANUAL
+    service: str | None = None
+    external_id: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 

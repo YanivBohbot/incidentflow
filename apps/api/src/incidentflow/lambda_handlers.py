@@ -1,4 +1,7 @@
-"""AWS Lambda entry points: the SQS worker, the stale-row sweeper, and one-shot migrations.
+"""AWS Lambda entry points: the SQS worker, the stale-row sweeper, the alarm ingester, and
+one-shot migrations.
+
+``ingest_handler`` turns CloudWatch alarm state changes (via EventBridge) into incidents.
 
 They reuse the local worker's job code. One runtime lives per Lambda execution environment: a
 persistent event loop and, after the first worker invocation, the checkpointer, workflow and
@@ -11,12 +14,14 @@ import json
 import logging
 import os
 import sys
+import uuid
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
+import boto3
 from sqlalchemy.orm import Session
 
 from incidentflow.agent.mcp_clients.oauth_store import (
@@ -28,8 +33,15 @@ from incidentflow.agent.orchestration.investigation_workflow import build_invest
 from incidentflow.agent.orchestration.supervisor import build_investigation_supervisor
 from incidentflow.application.jobs.processor import InvestigationJobProcessor
 from incidentflow.application.jobs.queue import JobQueue, ReceivedJob
+from incidentflow.application.services.incident_ingestion_service import (
+    AlarmTagReader,
+    CloudWatchAlarmTagReader,
+    IncidentIngestionService,
+)
 from incidentflow.core.config import Settings, get_settings
 from incidentflow.core.ssm import SSM_PATH_ENV, load_ssm_secrets_if_configured
+from incidentflow.demo.simulator import DemoSimulator
+from incidentflow.infrastructure.database.incident_repository import IncidentRepository
 from incidentflow.infrastructure.database.session import get_session_factory
 from incidentflow.infrastructure.queue.sqs import build_job_queue
 from incidentflow.migrate import run_migrations
@@ -71,6 +83,25 @@ checkpointer_context_factory: Callable[[str], AbstractAsyncContextManager[Any]] 
 processor_builder: Callable[..., InvestigationJobProcessor] = build_processor
 session_factory_provider: Callable[[], Callable[[], Session]] = get_session_factory
 job_queue_factory: Callable[[Settings], JobQueue] = build_job_queue
+
+
+def _build_alarm_tag_reader() -> AlarmTagReader:
+    return CloudWatchAlarmTagReader(boto3.client("cloudwatch"))
+
+
+alarm_tag_reader_factory: Callable[[], AlarmTagReader] = _build_alarm_tag_reader
+
+
+def _build_demo_simulator(settings: Settings) -> DemoSimulator:
+    return DemoSimulator(
+        boto3.client("logs"),
+        boto3.client("cloudwatch"),
+        boto3.client("sts"),
+        interval_seconds=settings.demo_interval_seconds,
+    )
+
+
+demo_simulator_factory: Callable[[Settings], DemoSimulator] = _build_demo_simulator
 
 
 @dataclass
@@ -219,6 +250,31 @@ def sweeper_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if resent:
         logger.info("Sweeper re-sent %d stale investigation(s).", resent)
     return {"resent": resent}
+
+
+def ingest_handler(event: dict[str, Any], context: Any) -> dict[str, str]:
+    """EventBridge handler: create an incident from a CloudWatch alarm entering ALARM.
+
+    Errors propagate so EventBridge retries; a duplicate is a normal outcome, not an error.
+    """
+    _load_environment()
+    settings = get_settings()
+    with session_factory_provider()() as session:
+        service = IncidentIngestionService(
+            IncidentRepository(session),
+            alarm_tag_reader_factory(),
+            settings.ingest_alarm_prefix,
+        )
+        result = service.ingest_cloudwatch_alarm(event)
+    return {"outcome": result.outcome.name}
+
+
+def demo_handler(event: dict[str, Any], context: Any) -> dict[str, str]:
+    """Replay the demo outages through real alarms; EventBridge then ingests them as incidents."""
+    _load_environment()
+    run_id = str(event.get("run_id") or uuid.uuid4().hex)
+    demo_simulator_factory(get_settings()).run(run_id)
+    return {"run_id": run_id}
 
 
 def migrate_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:

@@ -88,6 +88,15 @@ class Settings(BaseSettings):
     job_max_attempts: int = 3
     # Deadline for one workflow run; the default fits AWS Lambda's 15-minute cap.
     job_timeout_seconds: float = 900
+    # CloudWatch alarms whose names start with this prefix are ingested as incidents.
+    ingest_alarm_prefix: str = "if-"
+    # The demo replays outages through real CloudWatch alarms. With a function name the API
+    # invokes that Lambda; without one it runs the simulator itself using the demo AWS profile.
+    demo_enabled: bool = False
+    demo_function_name: str | None = None
+    demo_interval_seconds: float = 8.0
+    demo_aws_profile: str = "incidentflow-demo"
+    demo_auto_cooldown_seconds: int = 600
 
     @field_validator("sqs_endpoint_url", mode="before")
     @classmethod

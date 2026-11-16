@@ -1,14 +1,24 @@
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from incidentflow.domain.incidents.models import (
+    AlarmIncidentCreate,
     Incident,
     IncidentCreate,
+    IncidentSource,
+    IncidentStatus,
     IncidentUpdate,
 )
-from incidentflow.infrastructure.database.models import IncidentORM
+from incidentflow.infrastructure.database.models import OPEN_STATUSES, IncidentORM
+
+
+class DuplicateOpenIncidentError(Exception):
+    """An open incident already exists for the same source and external id."""
 
 
 class IncidentRepository:
@@ -24,6 +34,9 @@ class IncidentRepository:
                 "description": orm.description,
                 "priority": orm.priority,
                 "status": orm.status,
+                "source": orm.source,
+                "service": orm.service,
+                "external_id": orm.external_id,
                 "created_at": orm.created_at,
                 "updated_at": orm.updated_at,
             }
@@ -44,6 +57,84 @@ class IncidentRepository:
         self.session.refresh(orm)
 
         return self.to_domain(orm)
+
+    def create_alarm_incident(self, data: AlarmIncidentCreate) -> Incident:
+        orm = IncidentORM(
+            title=data.title,
+            description=data.description,
+            priority=data.priority,
+            source=IncidentSource.CLOUDWATCH_ALARM,
+            service=data.service,
+            external_id=data.external_id,
+        )
+
+        self.session.add(orm)
+        try:
+            self.session.commit()
+        except IntegrityError as error:
+            self.session.rollback()
+            raise DuplicateOpenIncidentError(data.external_id) from error
+        self.session.refresh(orm)
+
+        return self.to_domain(orm)
+
+    def close_open_alarm_incidents(self, alarm_names: Sequence[str]) -> int:
+        if not alarm_names:
+            return 0
+
+        statement = select(IncidentORM).where(
+            IncidentORM.source == IncidentSource.CLOUDWATCH_ALARM,
+            IncidentORM.status.in_(OPEN_STATUSES),
+            IncidentORM.external_id.is_not(None),
+        )
+        suffixes = tuple(f":alarm:{name}" for name in alarm_names)
+        closed = 0
+        for orm in self.session.scalars(statement):
+            if orm.external_id is not None and orm.external_id.endswith(suffixes):
+                orm.status = IncidentStatus.CLOSED
+                closed += 1
+
+        if closed:
+            self.session.commit()
+
+        return closed
+
+    def list_open_alarm_incident_ids(self, alarm_names: Sequence[str]) -> list[UUID]:
+        if not alarm_names:
+            return []
+
+        statement = select(IncidentORM.id, IncidentORM.external_id).where(
+            IncidentORM.source == IncidentSource.CLOUDWATCH_ALARM,
+            IncidentORM.status.in_(OPEN_STATUSES),
+            IncidentORM.external_id.is_not(None),
+        )
+        suffixes = tuple(f":alarm:{name}" for name in alarm_names)
+        return [
+            incident_id
+            for incident_id, external_id in self.session.execute(statement)
+            if external_id is not None and external_id.endswith(suffixes)
+        ]
+
+    def latest_alarm_incident_created_at(self, alarm_names: Sequence[str]) -> datetime | None:
+        if not alarm_names:
+            return None
+
+        statement = select(IncidentORM.external_id, IncidentORM.created_at).where(
+            IncidentORM.source == IncidentSource.CLOUDWATCH_ALARM,
+            IncidentORM.external_id.is_not(None),
+        )
+        suffixes = tuple(f":alarm:{name}" for name in alarm_names)
+        matching = [
+            created_at
+            for external_id, created_at in self.session.execute(statement)
+            if external_id is not None and external_id.endswith(suffixes)
+        ]
+        if not matching:
+            return None
+
+        latest = max(matching)
+        # SQLite drops the timezone; the column always stores UTC.
+        return latest if latest.tzinfo else latest.replace(tzinfo=UTC)
 
     def get_incident(
         self,

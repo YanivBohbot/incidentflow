@@ -10,6 +10,7 @@ from fastapi import FastAPI, Request
 from incidentflow.agent.orchestration.checkpoints.postgres import open_postgres_checkpointer
 from incidentflow.agent.orchestration.investigation_workflow import build_investigation_workflow
 from incidentflow.agent.orchestration.supervisor import build_investigation_supervisor
+from incidentflow.api.routes.demo import router as demo_router
 from incidentflow.api.routes.incidents import (
     router as incidents_router,
 )
@@ -96,6 +97,7 @@ def create_app(
         prefix=settings.api_prefix,
     )
     app.include_router(investigations_router, prefix=settings.api_prefix)
+    app.include_router(demo_router, prefix=settings.api_prefix)
     return app
 
 

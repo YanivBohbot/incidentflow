@@ -6,6 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from incidentflow.domain.incidents.models import (
     IncidentPriority,
+    IncidentSource,
     IncidentStatus,
     utc_now,
 )
@@ -16,9 +17,30 @@ from incidentflow.infrastructure.database.base import Base
 # At most one PENDING/RUNNING investigation per incident, even across API instances.
 ACTIVE_INVESTIGATION_PREDICATE = "lifecycle IN ('PENDING', 'RUNNING')"
 
+OPEN_STATUSES = (
+    IncidentStatus.OPEN,
+    IncidentStatus.INVESTIGATING,
+    IncidentStatus.PENDING_APPROVAL,
+)
+# At most one open incident per (source, external_id), e.g. one per CloudWatch alarm ARN.
+OPEN_INCIDENT_PREDICATE = (
+    "external_id IS NOT NULL AND status IN "
+    "(" + ", ".join(f"'{status.value}'" for status in OPEN_STATUSES) + ")"
+)
+
 
 class IncidentORM(Base):
     __tablename__ = "incidents"
+    __table_args__ = (
+        Index(
+            "uq_incidents_open_external",
+            "source",
+            "external_id",
+            unique=True,
+            postgresql_where=text(OPEN_INCIDENT_PREDICATE),
+            sqlite_where=text(OPEN_INCIDENT_PREDICATE),
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(
         primary_key=True,
@@ -46,6 +68,17 @@ class IncidentORM(Base):
         nullable=False,
         default=IncidentStatus.OPEN,
     )
+
+    source: Mapped[IncidentSource] = mapped_column(
+        Enum(IncidentSource, name="incident_source"),
+        nullable=False,
+        default=IncidentSource.MANUAL,
+        server_default=IncidentSource.MANUAL.value,
+    )
+
+    service: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    external_id: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
