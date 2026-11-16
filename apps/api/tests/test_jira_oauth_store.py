@@ -1,4 +1,5 @@
 import asyncio
+import time
 import warnings
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -14,6 +15,7 @@ from incidentflow.agent.mcp_clients.jira import JiraMCPClient
 from incidentflow.agent.mcp_clients.oauth_store import (
     JiraAuthorizationRequiredError,
     NonInteractiveOAuth,
+    RefreshingOAuth,
     build_oauth_token_storage,
 )
 from incidentflow.agent.tools import it_operations_tools
@@ -119,6 +121,7 @@ def test_jira_client_is_non_interactive_by_default(monkeypatch, tmp_path) -> Non
 
     assert isinstance(default_auth, NonInteractiveOAuth)
     assert not isinstance(interactive_auth, NonInteractiveOAuth)
+    assert isinstance(interactive_auth, RefreshingOAuth)
 
 
 class _UnauthorizedJiraClient:
@@ -216,3 +219,102 @@ def test_jira_client_closes_token_store_after_adapter_block(monkeypatch, block_r
         assert asyncio.run(client.list_tools()) == []
 
     assert inner.closed is True
+
+
+_MCP_URL = "https://mcp.example.test/v1/mcp"
+_METADATA_URL = "https://mcp.example.test/.well-known/oauth-authorization-server"
+
+
+async def _seed_expired_tokens(storage: FernetEncryptionWrapper) -> None:
+    from fastmcp.client.auth.oauth import TokenStorageAdapter
+    from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+
+    adapter = TokenStorageAdapter(async_key_value=storage, server_url=_MCP_URL)
+    await adapter.set_client_info(
+        OAuthClientInformationFull(
+            client_id="client-1",
+            redirect_uris=["http://localhost:8765/callback"],
+            token_endpoint_auth_method="none",
+        )
+    )
+    await adapter.set_tokens(
+        OAuthToken(access_token="old", token_type="Bearer", expires_in=3600, refresh_token="r1")
+    )
+    await storage.put(
+        key=adapter._get_token_expiry_cache_key(),
+        value={"expires_at": time.time() - 60},
+        collection="mcp-oauth-token-expiry",
+    )
+
+
+async def _request_mcp_with_stored_tokens(handler) -> tuple[list[str], int]:
+    import httpx2
+
+    seen: list[str] = []
+
+    def recording_handler(request: httpx2.Request) -> httpx2.Response:
+        seen.append(f"{request.method} {request.url.copy_with(query=None)}")
+        return handler(request)
+
+    transport = httpx2.MockTransport(recording_handler)
+    storage = FernetEncryptionWrapper(key_value=MemoryStore(), fernet=Fernet(Fernet.generate_key()))
+    await _seed_expired_tokens(storage)
+    auth = NonInteractiveOAuth(
+        mcp_url=_MCP_URL,
+        token_storage=storage,
+        httpx_client_factory=lambda **kwargs: httpx2.AsyncClient(transport=transport, **kwargs),
+    )
+    async with asyncio.timeout(5):
+        async with httpx2.AsyncClient(auth=auth, transport=transport) as client:
+            response = await client.get(_MCP_URL)
+    return seen, response.status_code
+
+
+def test_stored_token_refresh_uses_the_discovered_token_endpoint() -> None:
+    import httpx2
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        url = str(request.url.copy_with(query=None))
+        if url == _METADATA_URL:
+            return httpx2.Response(
+                200,
+                json={
+                    "issuer": "https://mcp.example.test",
+                    "authorization_endpoint": "https://mcp.example.test/v1/authorize",
+                    "token_endpoint": "https://mcp.example.test/v1/token",
+                },
+            )
+        if url == "https://mcp.example.test/v1/token":
+            return httpx2.Response(
+                200,
+                json={
+                    "access_token": "new",
+                    "token_type": "Bearer",
+                    "expires_in": 3600,
+                    "refresh_token": "r2",
+                },
+            )
+        if url == _MCP_URL and request.headers.get("Authorization") == "Bearer new":
+            return httpx2.Response(200, json={})
+        return httpx2.Response(404)
+
+    seen, status = asyncio.run(_request_mcp_with_stored_tokens(handler))
+
+    assert status == 200
+    assert seen == [
+        f"GET {_METADATA_URL}",
+        "POST https://mcp.example.test/v1/token",
+        f"GET {_MCP_URL}",
+    ]
+
+
+def test_failed_metadata_discovery_still_fails_fast() -> None:
+    import httpx2
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        if str(request.url.copy_with(query=None)) == _MCP_URL:
+            return httpx2.Response(401)
+        return httpx2.Response(404)
+
+    with pytest.raises(JiraAuthorizationRequiredError):
+        asyncio.run(_request_mcp_with_stored_tokens(handler))

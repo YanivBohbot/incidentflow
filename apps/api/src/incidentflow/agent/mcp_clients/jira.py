@@ -14,6 +14,7 @@ from langchain_core.tools import BaseTool, StructuredTool
 
 from incidentflow.agent.mcp_clients.oauth_store import (
     NonInteractiveOAuth,
+    RefreshingOAuth,
     build_oauth_token_storage,
     close_oauth_token_storage,
 )
@@ -88,7 +89,7 @@ class JiraMCPClient:
         if interactive is None:
             interactive = get_settings().mcp_oauth_interactive
         if interactive:
-            return OAuth(
+            return RefreshingOAuth(
                 mcp_url=self.server_url,
                 client_name="IncidentFlow Jira MCP",
                 token_storage=token_storage,

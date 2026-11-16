@@ -1,15 +1,22 @@
 """Encrypted, durable OAuth state for the Jira MCP client and a browserless OAuth flow."""
 
+import logging
 import warnings
 from pathlib import Path
 
+import httpx2
 from cryptography.fernet import Fernet
 from fastmcp.client.auth import OAuth
 from key_value.aio.protocols.key_value import AsyncKeyValue
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
-from mcp.shared.auth import AuthorizationCodeResult
+from mcp.shared.auth import AuthorizationCodeResult, OAuthMetadata
+from pydantic import ValidationError
 
 from incidentflow.core.config import Settings
+
+logger = logging.getLogger(__name__)
+
+METADATA_DISCOVERY_TIMEOUT_SECONDS = 10.0
 
 JIRA_AUTHORIZATION_REQUIRED_MESSAGE = (
     "Jira authorization expired or missing; run scripts/authorize_jira.py."
@@ -23,7 +30,39 @@ class JiraAuthorizationRequiredError(RuntimeError):
         super().__init__(message)
 
 
-class NonInteractiveOAuth(OAuth):
+class RefreshingOAuth(OAuth):
+    """OAuth that finds the real token endpoint before refreshing tokens loaded from storage.
+
+    Relies on mcp 2.3.0 internals (`mcp/client/auth/oauth2.py`): `_auth_flow` calls
+    `_refresh_token` for an expired stored token before any 401 has run metadata discovery, and
+    `_refresh_token` then falls back to `<origin>/token`, which Atlassian answers with 404. We
+    fill `context.oauth_metadata` from RFC 8414 discovery first. Re-check on an mcp upgrade.
+    """
+
+    async def _refresh_token(self) -> httpx2.Request:
+        if self.context.oauth_metadata is None:
+            self.context.oauth_metadata = await self._discover_authorization_server_metadata()
+        return await super()._refresh_token()
+
+    async def _discover_authorization_server_metadata(self) -> OAuthMetadata | None:
+        """Fetch the server's RFC 8414 metadata; None lets the SDK's own fallback proceed."""
+        base_url = self.context.get_authorization_base_url(self.context.server_url)
+        url = f"{base_url}/.well-known/oauth-authorization-server"
+        try:
+            async with self.httpx_client_factory(
+                timeout=httpx2.Timeout(METADATA_DISCOVERY_TIMEOUT_SECONDS)
+            ) as client:
+                response = await client.get(url)
+            if response.status_code != 200:
+                logger.warning("OAuth metadata discovery returned %s", response.status_code)
+                return None
+            return OAuthMetadata.model_validate_json(response.content)
+        except (httpx2.HTTPError, ValidationError) as error:
+            logger.warning("OAuth metadata discovery failed: %s", type(error).__name__)
+            return None
+
+
+class NonInteractiveOAuth(RefreshingOAuth):
     """OAuth that refreshes stored tokens but fails fast instead of asking for a browser."""
 
     async def redirect_handler(self, authorization_url: str) -> None:
