@@ -47,9 +47,10 @@ PostgreSQL LangGraph checkpointer; they do not create tables themselves.
 The web container proxies `/api/*` to the API container, so browser requests
 remain same-origin.
 
-The `migrate`, `api`, and `worker` services use the same image that AWS Lambda runs. Its
-Lambda-only pieces are inert locally: the Lambda Web Adapter in `/opt/extensions` is started only
-by the Lambda service, `awslambdaric` is used only when a Lambda overrides the command with
+The `migrate`, `api`, and `worker` services build the Dockerfile's default (last) target, `api`,
+which is the image the api Lambda runs; the worker, sweeper, and migrate Lambdas use the `jobs`
+target, the same image without the Lambda Web Adapter. The Lambda-only pieces are inert locally:
+the adapter in `/opt/extensions` is started only by the Lambda service, `awslambdaric` is used only when a Lambda overrides the command with
 `python -m awslambdaric incidentflow.lambda_handlers.<name>`, and the bundled Node runtime with
 `mongodb-mcp-server` runs only when `MONGODB_MCP_TRANSPORT=stdio` (Compose keeps the default HTTP
 transport to a host MongoDB MCP server).
