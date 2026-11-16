@@ -205,14 +205,15 @@ def session_factory() -> Iterator[sessionmaker[Session]]:
 
 def test_sweeper_resends_stale_rows(session_factory: sessionmaker[Session]) -> None:
     with session_factory() as session:
-        incident = IncidentORM(
-            id=uuid4(), title="API", description="500s.", priority=IncidentPriority.HIGH
-        )
-        session.add(incident)
-        session.commit()
         repo = InvestigationRepository(session)
 
         def create() -> UUID:
+            # One incident each: an incident holds at most one active investigation.
+            incident = IncidentORM(
+                id=uuid4(), title="API", description="500s.", priority=IncidentPriority.HIGH
+            )
+            session.add(incident)
+            session.commit()
             return repo.create_investigation(
                 InvestigationCreate(
                     incident_id=incident.id,

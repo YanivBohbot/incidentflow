@@ -27,7 +27,7 @@ services:
       - ./apps/api/.env
     environment:
       DATABASE_URL: postgresql+psycopg://incidentflow:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/incidentflow_db
-    command: ["alembic", "upgrade", "head"]
+    command: ["python", "-m", "incidentflow.migrate"]
     depends_on:
       postgres:
         condition: service_healthy

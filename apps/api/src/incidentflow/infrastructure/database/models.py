@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from incidentflow.domain.incidents.models import (
@@ -12,6 +12,9 @@ from incidentflow.domain.incidents.models import (
 from incidentflow.domain.investigations.models import InvestigationLifecycle
 from incidentflow.domain.memory.models import IncidentLessonState
 from incidentflow.infrastructure.database.base import Base
+
+# At most one PENDING/RUNNING investigation per incident, even across API instances.
+ACTIVE_INVESTIGATION_PREDICATE = "lifecycle IN ('PENDING', 'RUNNING')"
 
 
 class IncidentORM(Base):
@@ -60,6 +63,15 @@ class IncidentORM(Base):
 
 class InvestigationORM(Base):
     __tablename__ = "investigations"
+    __table_args__ = (
+        Index(
+            "uq_investigations_active_incident",
+            "incident_id",
+            unique=True,
+            postgresql_where=text(ACTIVE_INVESTIGATION_PREDICATE),
+            sqlite_where=text(ACTIVE_INVESTIGATION_PREDICATE),
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     incident_id: Mapped[UUID] = mapped_column(

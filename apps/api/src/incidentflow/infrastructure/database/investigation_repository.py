@@ -1,8 +1,9 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import DateTime, and_, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from incidentflow.agent.findings import InvestigationReport
@@ -11,7 +12,6 @@ from incidentflow.domain.investigations.models import (
     Investigation,
     InvestigationCreate,
     InvestigationLifecycle,
-    utc_now,
 )
 from incidentflow.infrastructure.database.models import InvestigationORM
 
@@ -22,6 +22,13 @@ PENDING = InvestigationLifecycle.PENDING
 def _lease_expired(now: datetime):
     """NULL lease (RUNNING rows from before the lease columns existed) counts as expired."""
     return or_(InvestigationORM.lease_expires_at.is_(None), InvestigationORM.lease_expires_at < now)
+
+
+def _database_now(session: Session) -> datetime:
+    """The database clock, shared by every API and worker instance, as an aware UTC time."""
+    now = session.execute(select(func.now(type_=DateTime(timezone=True)))).scalar_one()
+    # SQLite returns a naive CURRENT_TIMESTAMP, which is UTC.
+    return now.replace(tzinfo=UTC) if now.tzinfo is None else now.astimezone(UTC)
 
 
 @dataclass(frozen=True)
@@ -76,7 +83,12 @@ class InvestigationRepository:
             workflow_thread_id=f"investigation:{investigation_id}",
         )
         self.session.add(orm)
-        self.session.commit()
+        try:
+            self.session.commit()
+        except IntegrityError:
+            # e.g. uq_investigations_active_incident: the incident already has an active row.
+            self.session.rollback()
+            raise
         self.session.refresh(orm)
         return self.to_domain(orm)
 
@@ -126,7 +138,7 @@ class InvestigationRepository:
         self, investigation_id: UUID, *, lease_seconds: int, now: datetime | None = None
     ) -> ClaimedInvestigation | None:
         """Take PENDING work, or RUNNING work whose lease expired, under a fresh token."""
-        now = now or utc_now()
+        now = now or _database_now(self.session)
         token = str(uuid4())
         claimable = or_(
             InvestigationORM.lifecycle == PENDING,
@@ -162,7 +174,7 @@ class InvestigationRepository:
         lease_seconds: int,
         now: datetime | None = None,
     ) -> bool:
-        now = now or utc_now()
+        now = now or _database_now(self.session)
         return (
             self._apply(
                 investigation_id,
@@ -241,7 +253,7 @@ class InvestigationRepository:
         self, *, pending_older_than_seconds: int, now: datetime | None = None
     ) -> list[UUID]:
         """PENDING rows idle too long (lost queue message) and RUNNING rows with dead leases."""
-        now = now or utc_now()
+        now = now or _database_now(self.session)
         cutoff = now - timedelta(seconds=pending_older_than_seconds)
         statement = select(InvestigationORM.id).where(
             or_(

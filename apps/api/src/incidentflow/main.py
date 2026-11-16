@@ -36,8 +36,8 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # Checkpoint tables are created by `python -m incidentflow.migrate`, not per instance.
         async with checkpointer_context_factory(settings.checkpoint_database_url) as checkpointer:
-            await checkpointer.setup()
             app.state.job_queue = job_queue_factory(settings)
             supervisor = build_investigation_supervisor()
             app.state.investigation_workflow = build_investigation_workflow(

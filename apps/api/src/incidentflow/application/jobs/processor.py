@@ -115,6 +115,8 @@ class InvestigationJobProcessor:
         claimed = await asyncio.to_thread(self._claim, investigation_id)
         if claimed is None:
             return JobOutcome.DROPPED
+        # Extend the message right away: the first heartbeat is a third of a lease away.
+        await self._keep_alive(keep_alive)
         if claimed.attempt_count > self.max_attempts:
             return await self._fail(
                 claimed, MAX_ATTEMPTS_MESSAGE.format(attempts=self.max_attempts)
@@ -235,11 +237,16 @@ class InvestigationJobProcessor:
                 logger.warning("Investigation lease was lost; the result will be dropped")
                 lease_lost.set()
                 return
-            if keep_alive is not None:
-                try:
-                    await keep_alive()
-                except Exception:
-                    logger.exception("Job keep-alive failed; retrying")
+            await self._keep_alive(keep_alive)
+
+    @staticmethod
+    async def _keep_alive(keep_alive: Callable[[], Awaitable[None]] | None) -> None:
+        if keep_alive is None:
+            return
+        try:
+            await keep_alive()
+        except Exception:
+            logger.exception("Job keep-alive failed; retrying")
 
     async def _persist(self, claimed: ClaimedInvestigation, result: dict) -> JobOutcome:
         try:

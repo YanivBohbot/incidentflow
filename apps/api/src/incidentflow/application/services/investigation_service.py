@@ -2,6 +2,8 @@ import logging
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
+
 from incidentflow.agent.orchestration.policies.human_review import jira_tool_resume_payload
 from incidentflow.agent.orchestration.trace import build_investigation_trace
 from incidentflow.application.jobs.queue import JobQueue
@@ -49,24 +51,32 @@ class InvestigationService:
         if incident is None:
             return None
         if self.repository.has_active_investigation(incident.id):
-            active = next(
-                (
-                    item
-                    for item in self.repository.list_for_incident(incident.id)
-                    if item.lifecycle in ACTIVE_LIFECYCLES
-                ),
-                None,
+            raise self._already_active(incident.id)
+        try:
+            investigation = self.repository.create_investigation(
+                InvestigationCreate(
+                    incident_id=incident.id,
+                    incident_request=data.incident_request,
+                    incident_business_status=incident.status.value,
+                )
             )
-            raise InvestigationAlreadyActiveError(active.id if active else incident.id)
-        investigation = self.repository.create_investigation(
-            InvestigationCreate(
-                incident_id=incident.id,
-                incident_request=data.incident_request,
-                incident_business_status=incident.status.value,
-            )
-        )
+        except IntegrityError as error:
+            # Another API instance inserted an active row after the check above; the unique
+            # index uq_investigations_active_incident rejected this one.
+            raise self._already_active(incident.id) from error
         self._enqueue(investigation.id)
         return investigation
+
+    def _already_active(self, incident_id: UUID) -> InvestigationAlreadyActiveError:
+        active = next(
+            (
+                item
+                for item in self.repository.list_for_incident(incident_id)
+                if item.lifecycle in ACTIVE_LIFECYCLES
+            ),
+            None,
+        )
+        return InvestigationAlreadyActiveError(active.id if active else incident_id)
 
     def get_investigation(self, investigation_id: UUID) -> Investigation | None:
         return self.repository.get_investigation(investigation_id)

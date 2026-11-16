@@ -1,9 +1,10 @@
 from collections.abc import Iterator
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import create_engine, update
+from sqlalchemy import create_engine, event, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -43,14 +44,18 @@ def session() -> Iterator[Session]:
         yield db
 
 
-@pytest.fixture
-def incident_id(session: Session) -> UUID:
+def _new_incident(session: Session) -> UUID:
     incident = IncidentORM(
         id=uuid4(), title="Payment API", description="HTTP 500s.", priority=IncidentPriority.HIGH
     )
     session.add(incident)
     session.commit()
     return incident.id
+
+
+@pytest.fixture
+def incident_id(session: Session) -> UUID:
+    return _new_incident(session)
 
 
 def _create(repo: InvestigationRepository, incident_id: UUID) -> UUID:
@@ -152,15 +157,11 @@ def test_has_active_investigation(session: Session, incident_id: UUID) -> None:
     assert repo.has_active_investigation(incident_id) is False
 
 
-def test_stale_ids_cover_old_pending_and_expired_running(
-    session: Session, incident_id: UUID
-) -> None:
+def test_stale_ids_cover_old_pending_and_expired_running(session: Session) -> None:
     repo = InvestigationRepository(session)
     now = utc_now()
-    fresh = _create(repo, incident_id)
-    old_pending = _create(repo, incident_id)
-    expired = _create(repo, incident_id)
-    live = _create(repo, incident_id)
+    # One incident each: an incident holds at most one active investigation.
+    fresh, old_pending, expired, live = (_create(repo, _new_incident(session)) for _ in range(4))
     session.execute(
         update(InvestigationORM)
         .where(InvestigationORM.id == old_pending)
@@ -179,11 +180,11 @@ def test_stale_ids_cover_old_pending_and_expired_running(
 def test_count_by_lifecycle(session: Session, incident_id: UUID) -> None:
     repo = InvestigationRepository(session)
     assert repo.count_by_lifecycle() == {}
-    _create(repo, incident_id)
     for _ in range(2):
         inv_id = _create(repo, incident_id)
         claimed = repo.claim(inv_id, lease_seconds=300)
         repo.complete_investigation(inv_id, REPORT, lease_token=claimed.lease_token)
+    _create(repo, incident_id)
 
     assert repo.count_by_lifecycle() == {"PENDING": 1, "COMPLETED": 2}
 
@@ -222,3 +223,52 @@ def test_mark_awaiting_human_review_clears_the_resume_payload(
     assert paused is not None
     session.expire_all()
     assert session.get(InvestigationORM, inv_id).pending_resume_payload is None
+
+
+def test_second_active_investigation_violates_unique_index(
+    session: Session, incident_id: UUID
+) -> None:
+    repo = InvestigationRepository(session)
+    _create(repo, incident_id)
+
+    with pytest.raises(IntegrityError):
+        _create(repo, incident_id)
+
+    session.rollback()
+    assert len(repo.list_for_incident(incident_id)) == 1
+
+
+def test_completed_investigation_allows_a_new_one(session: Session, incident_id: UUID) -> None:
+    repo = InvestigationRepository(session)
+    first = _create(repo, incident_id)
+    claimed = repo.claim(first, lease_seconds=300)
+    repo.complete_investigation(first, REPORT, lease_token=claimed.lease_token)
+
+    second = _create(repo, incident_id)
+
+    assert second != first
+    assert repo.get_investigation(second).lifecycle is PENDING
+
+
+def test_claim_uses_database_time_when_now_omitted(session: Session, incident_id: UUID) -> None:
+    repo = InvestigationRepository(session)
+    inv_id = _create(repo, incident_id)
+    statements: list[str] = []
+
+    def record(_conn, _cursor, statement, *_args) -> None:
+        statements.append(statement)
+
+    engine = session.get_bind()
+    event.listen(engine, "before_cursor_execute", record)
+    before = datetime.now(UTC)
+    try:
+        assert repo.claim(inv_id, lease_seconds=300) is not None
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    # The lease is computed from the shared database clock, not this process's clock.
+    assert any("CURRENT_TIMESTAMP" in statement for statement in statements)
+    session.expire_all()
+    expires_at = session.get(InvestigationORM, inv_id).lease_expires_at.replace(tzinfo=UTC)
+    # SQLite's CURRENT_TIMESTAMP has one-second precision.
+    assert before + timedelta(seconds=298) <= expires_at <= before + timedelta(seconds=302)

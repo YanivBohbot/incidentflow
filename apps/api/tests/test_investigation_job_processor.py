@@ -621,3 +621,24 @@ async def test_timeout_error_raised_by_the_workflow_is_a_workflow_failure() -> N
     assert await processor.process(investigation.id) is JobOutcome.FAILED
     failed = harness.get(investigation.id)
     assert failed.error_message == "Workflow execution failed before a report was produced."
+
+
+@pytest.mark.anyio
+async def test_keep_alive_called_right_after_claim() -> None:
+    events: list[str] = []
+
+    class RecordingSupervisor(ReportingSupervisor):
+        async def ainvoke(self, payload: dict, *, config: dict) -> dict:
+            events.append("run")
+            return await super().ainvoke(payload, config=config)
+
+    harness = Harness(RecordingSupervisor(), heartbeat_interval_seconds=3600)
+    investigation = harness.create()
+
+    async def keep_alive() -> None:
+        events.append(f"keep_alive:{harness.get(investigation.id).lifecycle.value}")
+
+    assert await harness.processor.process(investigation.id, keep_alive=keep_alive) is (
+        JobOutcome.COMPLETED
+    )
+    assert events == ["keep_alive:RUNNING", "run"]

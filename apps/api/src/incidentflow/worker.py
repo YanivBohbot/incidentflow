@@ -158,8 +158,8 @@ async def main() -> None:
         except NotImplementedError:  # Windows: KeyboardInterrupt is handled by the caller.
             pass
 
+    # Checkpoint tables are created by `python -m incidentflow.migrate`, not per worker.
     async with open_postgres_checkpointer(settings.checkpoint_database_url) as checkpointer:
-        await checkpointer.setup()
         workflow: Any = build_investigation_workflow(
             build_investigation_supervisor(), checkpointer=checkpointer
         )

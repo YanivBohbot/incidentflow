@@ -64,7 +64,7 @@ async def test_app_lifespan_opens_checkpointer_and_shares_workflow(monkeypatch) 
         assert app.state.investigation_workflow is not None
         assert app.state.job_queue is queue
 
-    assert events == ["open", "setup", "close"]
+    assert events == ["open", "close"]
 
 
 def test_metrics_count_investigations_from_database(monkeypatch) -> None:

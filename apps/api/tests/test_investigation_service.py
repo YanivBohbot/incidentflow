@@ -238,3 +238,27 @@ def test_resume_with_forbidden_edit_leaves_investigation_awaiting() -> None:
         current = InvestigationRepository(session).get_investigation(created.id)
         assert current.lifecycle == InvestigationLifecycle.AWAITING_HUMAN_REVIEW
         assert queue.sent == [created.id]
+
+
+def test_concurrent_start_maps_integrity_error_to_already_active() -> None:
+    class RacingRepository(InvestigationRepository):
+        """The pre-check runs before another instance's insert commits."""
+
+        def has_active_investigation(self, incident_id: UUID) -> bool:
+            return False
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        incident = create_incident(session)
+        queue = InMemoryJobQueue()
+        first = make_service(session, queue).start_investigation(start_data(incident))
+        service = InvestigationService(
+            RacingRepository(session), IncidentRepository(session), queue, object()
+        )
+
+        with pytest.raises(InvestigationAlreadyActiveError) as error:
+            service.start_investigation(start_data(incident))
+
+        assert error.value.investigation_id == first.id
+        assert queue.sent == [first.id]
