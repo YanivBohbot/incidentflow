@@ -4,8 +4,17 @@ export type Incident = {
   description: string
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
   status: string
+  source: 'MANUAL' | 'CLOUDWATCH_ALARM'
+  service: string | null
+  external_id: string | null
   created_at: string
   updated_at: string
+}
+
+export type DemoRun = {
+  started: boolean
+  run_id: string | null
+  closed_incidents: number
 }
 
 export type InvestigationEvidence = {
@@ -148,5 +157,8 @@ export const api = {
   getInvestigationTrace: (investigationId: string) =>
     request<TraceStep[]>(`/investigations/${investigationId}/trace`),
   getOperationalMetrics: () => requestOperational<OperationalMetrics>('/operations/metrics'),
+  getDemoStatus: () => request<{ enabled: boolean }>('/demo'),
+  startDemoRun: (onlyIfIdle = false) =>
+    request<DemoRun>(`/demo/runs${onlyIfIdle ? '?only_if_idle=true' : ''}`, { method: 'POST' }),
   getReadiness: () => requestOperational<Readiness>('/health/ready'),
 }

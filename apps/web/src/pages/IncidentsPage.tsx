@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Incident, Investigation } from '../api'
 import { EmptyState } from '../components/ui/EmptyState'
+import { activeIncidents } from '../features/incidents/activeIncidents'
 import { IncidentForm } from '../features/incidents/IncidentForm'
 
 type Severity = Incident['priority']
@@ -13,6 +14,19 @@ const LIFECYCLE_LABELS: Record<string, string> = {
   AWAITING_HUMAN_REVIEW: 'Awaiting review',
   COMPLETED: 'Investigated',
   FAILED: 'Last run failed',
+}
+
+const NEW_HIGHLIGHT_MS = 4_000
+const DEMO_COOLDOWN_MS = 10_000
+const SOURCE_LABELS: Record<Incident['source'], string> = { MANUAL: 'Manual', CLOUDWATCH_ALARM: 'CloudWatch alarm' }
+
+/** "12 s ago", "5 min ago", "3 h ago", "2 d ago". */
+function relativeTime(iso: string, now: number) {
+  const seconds = Math.max(0, Math.round((now - Date.parse(iso)) / 1000))
+  if (seconds < 60) return `${seconds} s ago`
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`
+  if (seconds < 86_400) return `${Math.floor(seconds / 3600)} h ago`
+  return `${Math.floor(seconds / 86_400)} d ago`
 }
 
 /** Most severe first, then most recent first. */
@@ -32,14 +46,59 @@ type IncidentsPageProps = {
   /** True while the start request is in flight, so a double click cannot queue twice. */
   isStartingInvestigation?: boolean
   onCloseCreateForm: () => void
+  demoEnabled?: boolean
+  isDemoStarting?: boolean
+  onRunDemo?: () => Promise<void>
+  /** Called once per page visit when the demo is enabled. */
+  onAutoStartDemo?: () => Promise<void>
 }
 
 /**
  * Two columns at the same height: the incident queue (step 1) on the left, and on the right
  * either the report form or the selected incident with its launch button (step 2).
  */
-export function IncidentsPage({ incidents, investigations, selectedIncident, onCreateIncident, onSelectIncident, onStartInvestigation, isCreateFormOpen, isStartingInvestigation = false, onCloseCreateForm }: IncidentsPageProps) {
+export function IncidentsPage({ incidents: allIncidents, investigations, selectedIncident, onCreateIncident, onSelectIncident, onStartInvestigation, isCreateFormOpen, isStartingInvestigation = false, onCloseCreateForm, demoEnabled = false, isDemoStarting = false, onRunDemo, onAutoStartDemo }: IncidentsPageProps) {
+  const incidents = useMemo(() => activeIncidents(allIncidents), [allIncidents])
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('ALL')
+  const [now, setNow] = useState(() => Date.now())
+  const [newIds, setNewIds] = useState<Set<string>>(new Set())
+  const [demoCooldown, setDemoCooldown] = useState(false)
+  const previousIds = useRef<Set<string> | null>(null)
+  const timers = useRef<number[]>([])
+  const autoStarted = useRef(false)
+
+  useEffect(() => {
+    const tick = window.setInterval(() => setNow(Date.now()), 1_000)
+    const pending = timers.current
+    return () => { window.clearInterval(tick); pending.forEach((timer) => window.clearTimeout(timer)) }
+  }, [])
+
+  // The page is mounted once per visit, so the ref gives "once per visit" across re-renders.
+  useEffect(() => {
+    if (!demoEnabled || autoStarted.current) return
+    autoStarted.current = true
+    void onAutoStartDemo?.()
+  }, [demoEnabled, onAutoStartDemo])
+
+  // Mark incidents missing from the previous list (never on the first render) for 4 s.
+  useEffect(() => {
+    const ids = new Set(incidents.map((item) => item.id))
+    const previous = previousIds.current
+    previousIds.current = ids
+    if (!previous) return
+    const added = [...ids].filter((id) => !previous.has(id))
+    if (added.length === 0) return
+    setNewIds((current) => new Set([...current, ...added]))
+    timers.current.push(window.setTimeout(() => {
+      setNewIds((current) => new Set([...current].filter((id) => !added.includes(id))))
+    }, NEW_HIGHLIGHT_MS))
+  }, [incidents])
+
+  async function runDemo() {
+    setDemoCooldown(true)
+    timers.current.push(window.setTimeout(() => setDemoCooldown(false), DEMO_COOLDOWN_MS))
+    await onRunDemo?.()
+  }
 
   async function createAndSelect(data: Pick<Incident, 'title' | 'description' | 'priority'>) {
     await onCreateIncident(data)
@@ -60,6 +119,11 @@ export function IncidentsPage({ incidents, investigations, selectedIncident, onC
           <p>STEP 1 · CHOOSE AN INCIDENT</p>
           <h2>Incident queue</h2>
           <span>Sorted by severity. Filter by severity, then select an incident to investigate it.</span>
+          {demoEnabled && (
+            <button className="quiet-button run-demo-button" disabled={demoCooldown || isDemoStarting} onClick={() => void runDemo()} type="button">
+              {demoCooldown || isDemoStarting ? 'Demo running…' : 'Run demo'}
+            </button>
+          )}
         </div>
         <div aria-label="Filter by severity" className="severity-filter" role="group">
           {(['ALL', ...SEVERITY_ORDER] as SeverityFilter[]).map((severity) => (
@@ -78,16 +142,19 @@ export function IncidentsPage({ incidents, investigations, selectedIncident, onC
             {visibleIncidents.map((incident) => {
               const latest = latestInvestigation(incident)
               return (
-                <li className={selectedIncident?.id === incident.id ? 'is-selected' : ''} key={incident.id}>
+                <li className={`${selectedIncident?.id === incident.id ? 'is-selected' : ''} ${newIds.has(incident.id) ? 'is-new' : ''}`.trim()} key={incident.id}>
                   <button onClick={() => { onCloseCreateForm(); onSelectIncident(incident) }} type="button">
                     <span className="incident-badges">
                       <span className={`priority priority-${incident.priority.toLowerCase()}`}>{incident.priority}</span>
                       <span className={`investigation-state ${latest ? `lifecycle-${latest.lifecycle.toLowerCase()}` : 'is-new'}`}>
                         {latest ? LIFECYCLE_LABELS[latest.lifecycle] ?? latest.lifecycle : 'Not investigated'}
                       </span>
+                      <span className={`source-badge source-${(incident.source ?? 'MANUAL').toLowerCase()}`}>{SOURCE_LABELS[incident.source] ?? 'Manual'}</span>
                     </span>
                     <strong>{incident.title}</strong>
-                    <small>{new Date(incident.created_at).toLocaleString()}</small>
+                    <small title={new Date(incident.created_at).toLocaleString()}>
+                      {incident.service ? `${incident.service} · ` : ''}{relativeTime(incident.created_at, now)}
+                    </small>
                   </button>
                 </li>
               )

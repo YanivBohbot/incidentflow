@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, api } from '../api'
+import { activeIncidents } from '../features/incidents/activeIncidents'
 import type {
   HumanReviewDecision,
   Incident,
@@ -10,6 +11,7 @@ import type {
 } from '../api'
 
 const WORKSPACE_REFRESH_MS = 10_000
+const INCIDENTS_PAGE_REFRESH_MS = 3_000
 const ACTIVE_INVESTIGATION_REFRESH_MS = 1_500
 
 const LIFECYCLE_MESSAGES: Record<string, string> = {
@@ -33,7 +35,8 @@ function mergeInvestigations(current: Investigation[], incoming: Investigation[]
   return [...local.filter((item) => !known.has(item.id)), ...merged]
 }
 
-export function useIncidentFlow() {
+export function useIncidentFlow(activePage: string = 'overview') {
+  const refreshMs = activePage === 'incidents' ? INCIDENTS_PAGE_REFRESH_MS : WORKSPACE_REFRESH_MS
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [investigations, setInvestigations] = useState<Investigation[]>([])
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null)
@@ -45,6 +48,8 @@ export function useIncidentFlow() {
   const [readiness, setReadiness] = useState<Readiness>({ status: 'starting' })
   const [statusMessage, setStatusMessage] = useState('Connecting to the IncidentFlow API…')
   const [isLoading, setIsLoading] = useState(true)
+  const [demoEnabled, setDemoEnabled] = useState(false)
+  const [isDemoStarting, setIsDemoStarting] = useState(false)
   // The ref blocks a second start before React re-renders; the state disables the button.
   const startInFlight = useRef(false)
   const [isStartingInvestigation, setIsStartingInvestigation] = useState(false)
@@ -91,19 +96,55 @@ export function useIncidentFlow() {
       }
     }
     void loadWorkspace()
-    // Investigations can pause from anywhere (another tab, the API, a script): refresh
-    // regularly so the approval badge and banner appear without reloading the page.
+    return () => { isCurrent = false }
+  }, [refreshWorkspace])
+
+  useEffect(() => {
+    let isCurrent = true
+    api.getDemoStatus()
+      .then((status) => { if (isCurrent) setDemoEnabled(status.enabled) })
+      .catch(() => undefined)
+    return () => { isCurrent = false }
+  }, [])
+
+  useEffect(() => {
+    // Investigations can pause from anywhere (another tab, the API, a script) and alarm
+    // incidents arrive on their own: refresh regularly, faster while the queue is on screen.
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') void refreshWorkspace().catch(() => undefined)
-    }, WORKSPACE_REFRESH_MS)
+    }, refreshMs)
     const refreshOnFocus = () => {
       if (document.visibilityState === 'visible') void refreshWorkspace().catch(() => undefined)
     }
     document.addEventListener('visibilitychange', refreshOnFocus)
     return () => {
-      isCurrent = false
       window.clearInterval(timer)
       document.removeEventListener('visibilitychange', refreshOnFocus)
+    }
+  }, [refreshWorkspace, refreshMs])
+
+  /** Manual demo run; a failure (including 403 for a viewer) goes to the status message. */
+  const startDemoRun = useCallback(async () => {
+    setIsDemoStarting(true)
+    setStatusMessage('Starting the demo…')
+    try {
+      await api.startDemoRun(false)
+      setStatusMessage('Demo started. Alarm incidents will appear shortly.')
+      await refreshWorkspace().catch(() => undefined)
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : 'Could not start the demo.')
+    } finally {
+      setIsDemoStarting(false)
+    }
+  }, [refreshWorkspace])
+
+  /** Page-open demo start: skipped when a demo ran recently, silent on any failure. */
+  const autoStartDemo = useCallback(async () => {
+    try {
+      const run = await api.startDemoRun(true)
+      if (run.started) await refreshWorkspace().catch(() => undefined)
+    } catch {
+      // A viewer gets 403 here; nothing to show. The Run demo button reports real errors.
     }
   }, [refreshWorkspace])
 
@@ -220,16 +261,19 @@ export function useIncidentFlow() {
   }, [])
 
   const metrics = useMemo(() => ({
-    incidentCount: incidents.length,
+    incidentCount: activeIncidents(incidents).length,
     runningInvestigationCount: investigations.filter((item) => item.lifecycle === 'RUNNING').length,
     pendingApprovalCount: investigations.filter((item) => item.lifecycle === 'AWAITING_HUMAN_REVIEW').length,
   }), [incidents, investigations])
 
   return {
     confirmIncidentLesson,
+    autoStartDemo,
     createIncident,
+    demoEnabled,
     incidents,
     investigations,
+    isDemoStarting,
     isLoading,
     isStartingInvestigation,
     metrics,
@@ -241,6 +285,7 @@ export function useIncidentFlow() {
     selectedInvestigation,
     setSelectedIncident,
     selectInvestigation,
+    startDemoRun,
     startInvestigation,
     statusMessage,
   }

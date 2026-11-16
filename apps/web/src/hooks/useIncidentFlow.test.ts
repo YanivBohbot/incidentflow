@@ -172,3 +172,34 @@ describe('useIncidentFlow queued investigations', () => {
     expect(result.current.statusMessage).toBe('Investigation queued…')
   })
 })
+
+describe('useIncidentFlow demo', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
+
+  it('autoStartDemo is silent on 403 and calls only_if_idle', async () => {
+    const fetchMock = mockApi({
+      ...baseRoutes(() => []),
+      'GET /api/demo': () => ({ status: 200, body: { enabled: true } }),
+      'POST /api/demo/runs?only_if_idle=true': () => ({ status: 403, body: { detail: 'forbidden' } }),
+    })
+    const { result } = renderHook(() => useIncidentFlow('incidents'))
+    await waitFor(() => expect(result.current.demoEnabled).toBe(true))
+    await act(async () => { await result.current.autoStartDemo() })
+    expect(fetchMock).toHaveBeenCalledWith('/api/demo/runs?only_if_idle=true', expect.objectContaining({ method: 'POST' }))
+    expect(result.current.statusMessage).not.toContain('forbidden')
+  })
+
+  it('counts only open incidents in the incidents metric', async () => {
+    mockApi({
+      ...baseRoutes(() => []),
+      'GET /api/incidents': () => ({
+        status: 200,
+        body: [incident, { ...incident, id: 'closed-1', status: 'CLOSED' }, { ...incident, id: 'done-1', status: 'RESOLVED' }],
+      }),
+    })
+    const { result } = renderHook(() => useIncidentFlow())
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(result.current.incidents).toHaveLength(3)
+    expect(result.current.metrics.incidentCount).toBe(1)
+  })
+})

@@ -11,7 +11,7 @@ import { OverviewPage } from './pages/OverviewPage'
 function App() {
   const [activePage, setActivePage] = useState<AppPage>('overview')
   const [isCreateIncidentFormOpen, setIsCreateIncidentFormOpen] = useState(false)
-  const workspace = useIncidentFlow()
+  const workspace = useIncidentFlow(activePage)
 
   async function handleStartInvestigation() {
     setActivePage('investigations') // watch the agents work while the workflow runs
@@ -36,7 +36,7 @@ function App() {
           operationalMetrics={workspace.operationalMetrics}
           readiness={workspace.readiness}
         />}
-        {activePage === 'incidents' && <IncidentsPage incidents={workspace.incidents} investigations={workspace.investigations} isCreateFormOpen={isCreateIncidentFormOpen} isStartingInvestigation={workspace.isStartingInvestigation} onCloseCreateForm={() => setIsCreateIncidentFormOpen(false)} onCreateIncident={workspace.createIncident} onSelectIncident={workspace.setSelectedIncident} onStartInvestigation={handleStartInvestigation} selectedIncident={workspace.selectedIncident} />}
+        {activePage === 'incidents' && <IncidentsPage demoEnabled={workspace.demoEnabled} isDemoStarting={workspace.isDemoStarting} onAutoStartDemo={workspace.autoStartDemo} onRunDemo={workspace.startDemoRun} incidents={workspace.incidents} investigations={workspace.investigations} isCreateFormOpen={isCreateIncidentFormOpen} isStartingInvestigation={workspace.isStartingInvestigation} onCloseCreateForm={() => setIsCreateIncidentFormOpen(false)} onCreateIncident={workspace.createIncident} onSelectIncident={workspace.setSelectedIncident} onStartInvestigation={handleStartInvestigation} selectedIncident={workspace.selectedIncident} />}
         {activePage === 'investigations' && <InvestigationsPage incidents={workspace.incidents} investigations={workspace.investigations} onConfirmLesson={workspace.confirmIncidentLesson} onSelectInvestigation={workspace.selectInvestigation} selectedInvestigation={workspace.selectedInvestigation} />}
         {activePage === 'approvals' && <ApprovalsPage incidents={workspace.incidents} investigations={workspace.investigations} onResolve={workspace.resolveHumanReview} />}
       </>}

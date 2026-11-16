@@ -337,3 +337,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .trace-subagent_call .trace-body { background:#fff; border-style:dashed; gap:2px; padding:6px 10px; }
 .trace-subagent_call .trace-body strong { font-family:var(--mono); font-size:12px; }
 .trace-subagent_call .trace-body p { color:var(--if-muted); font-family:var(--mono); font-size:11px; }
+
+.source-badge { background:#f1f5f9; border-radius:999px; color:#475569; font-size:11px; font-weight:600; padding:2px 8px; }
+.source-badge.source-cloudwatch_alarm { background:#fff7ed; color:#9a3412; }
+.run-demo-button { margin-top:8px; }
+.incident-list li.is-new button { animation:incident-arrived 4s ease-out; }
+@keyframes incident-arrived { 0%,70% { background:#fef9c3; border-color:#facc15; } 100% { background:#fff; border-color:transparent; } }
