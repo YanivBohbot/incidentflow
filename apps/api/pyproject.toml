@@ -27,6 +27,8 @@ dependencies = [
     "langchain-community",
     "langgraph>=1.0,<2.0",
     "langgraph-checkpoint-postgres",
+    # Imported directly: the checkpointer runs over a checked pool, not one long-lived connection.
+    "psycopg-pool>=3.2,<4.0",
     "langchain-openai>=1.0,<2.0",
     "diskcache",
     "py-key-value-aio[disk,dynamodb]",

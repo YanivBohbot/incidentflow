@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import json
+import logging
 from collections.abc import Awaitable, Callable, Iterator
 from datetime import timedelta
 from typing import Any
@@ -179,6 +180,73 @@ def test_warm_invocation_reuses_loop_and_workflow(wire_worker, queue: InMemoryJo
     assert calls == {"checkpointer": 1, "workflow": 1, "processor": 1}
     assert len(loops) == 2 and loops[0] is loops[1]
     assert len(queue.extended) == 2
+
+
+def test_crashed_job_rebuilds_runtime_for_next_invocation(wire_worker) -> None:
+    attempts = {"n": 0}
+
+    async def behaviour(_investigation_id: UUID, _keep_alive: KeepAlive) -> JobOutcome:
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise OSError("server closed the connection unexpectedly")
+        return JobOutcome.COMPLETED
+
+    calls = wire_worker(FakeProcessor(behaviour))
+    investigation_id = uuid4()
+    event = {"Records": [_record("m-1", _job_body(investigation_id))]}
+
+    first = lambda_handlers.worker_handler(event, None)
+    second = lambda_handlers.worker_handler(event, None)
+
+    assert first == {"batchItemFailures": [{"itemIdentifier": "m-1"}]}
+    assert second == {"batchItemFailures": []}
+    assert calls == {"checkpointer": 2, "workflow": 2, "processor": 2}
+
+
+def test_worker_handler_skips_records_missing_sqs_fields(wire_worker) -> None:
+    processor = FakeProcessor(_complete)
+    wire_worker(processor)
+    good = uuid4()
+    event = {
+        "Records": [
+            {"receiptHandle": "rh", "body": _job_body(uuid4())},
+            {"messageId": "m-no-receipt", "body": _job_body(uuid4())},
+            "not a record",
+            _record("m-good", _job_body(good)),
+        ]
+    }
+
+    result = lambda_handlers.worker_handler(event, None)
+
+    assert result == {"batchItemFailures": []}
+    assert processor.processed == [good]
+
+
+def test_lambda_logging_shows_info(monkeypatch: pytest.MonkeyPatch) -> None:
+    root = logging.getLogger()
+    monkeypatch.setattr(root, "level", logging.WARNING)
+    monkeypatch.setattr(root, "handlers", [logging.NullHandler()])
+    monkeypatch.delenv("AWS_LAMBDA_LOG_LEVEL", raising=False)
+
+    monkeypatch.delenv("AWS_LAMBDA_FUNCTION_NAME", raising=False)
+    lambda_handlers.configure_lambda_logging()
+    assert root.level == logging.WARNING
+
+    monkeypatch.setenv("AWS_LAMBDA_FUNCTION_NAME", "incidentflow-worker")
+    lambda_handlers.configure_lambda_logging()
+    assert root.level == logging.INFO
+
+
+def test_lambda_logging_respects_configured_level(monkeypatch: pytest.MonkeyPatch) -> None:
+    root = logging.getLogger()
+    monkeypatch.setattr(root, "level", logging.ERROR)
+    monkeypatch.setattr(root, "handlers", [logging.NullHandler()])
+    monkeypatch.setenv("AWS_LAMBDA_FUNCTION_NAME", "incidentflow-worker")
+    monkeypatch.setenv("AWS_LAMBDA_LOG_LEVEL", "ERROR")
+
+    lambda_handlers.configure_lambda_logging()
+
+    assert root.level == logging.ERROR
 
 
 def test_worker_setup_failure_is_retried_on_next_invocation(

@@ -37,6 +37,23 @@ from incidentflow.worker import build_processor, sweep_stale_investigations
 
 logger = logging.getLogger(__name__)
 
+
+def configure_lambda_logging() -> None:
+    """Show INFO logs in Lambda, whose root logger otherwise drops them.
+
+    Only inside Lambda, and only when the function has no log level of its own configured.
+    """
+    if not os.environ.get("AWS_LAMBDA_FUNCTION_NAME") or os.environ.get("AWS_LAMBDA_LOG_LEVEL"):
+        return
+    root = logging.getLogger()
+    if not root.handlers:
+        logging.basicConfig(level=logging.INFO)
+    elif root.level > logging.INFO:
+        root.setLevel(logging.INFO)
+
+
+configure_lambda_logging()
+
 JIRA_TOKEN_STORE_REQUIRED_MESSAGE = (
     "JIRA_MCP_ENABLED is true but no Jira OAuth token store is configured. On AWS set "
     "MCP_OAUTH_TOKEN_STORE=dynamodb, MCP_OAUTH_DYNAMODB_TABLE and "
@@ -116,16 +133,22 @@ async def _open_worker_runtime() -> _WorkerRuntime:
     return _WorkerRuntime(settings, queue, processor, resources)
 
 
-async def _process_record(runtime: _WorkerRuntime, record: dict[str, Any]) -> bool:
-    """Run one SQS record; return False only when SQS should redeliver it."""
-    message_id = record.get("messageId")
+def _parse_record(record: Any) -> tuple[str, ReceivedJob] | None:
+    """Return the record's message id and job, or None when it can never be processed."""
     try:
+        message_id = record["messageId"]
+        receipt = record["receiptHandle"]
         investigation_id = UUID(json.loads(record["body"])["investigation_id"])
     except (ValueError, KeyError, TypeError, AttributeError):
-        # Redelivering a malformed message can never succeed; let Lambda delete it.
-        logger.warning("Dropping malformed job queue message %s.", message_id)
-        return True
-    job = ReceivedJob(investigation_id=investigation_id, receipt=record["receiptHandle"])
+        return None
+    if not isinstance(message_id, str) or not isinstance(receipt, str):
+        return None
+    return message_id, ReceivedJob(investigation_id=investigation_id, receipt=receipt)
+
+
+async def _process_job(runtime: _WorkerRuntime, job: ReceivedJob) -> bool:
+    """Run one job; return False only when SQS should redeliver it."""
+    investigation_id = job.investigation_id
 
     async def keep_alive() -> None:
         try:
@@ -145,14 +168,36 @@ async def _process_record(runtime: _WorkerRuntime, record: dict[str, Any]) -> bo
     return True
 
 
-async def _process_records(records: list[dict[str, Any]]) -> list[dict[str, str]]:
+async def _discard_worker_runtime() -> None:
+    """Close and forget the runtime so the next job rebuilds it with fresh connections."""
     global _worker_runtime
-    if _worker_runtime is None:
-        _worker_runtime = await _open_worker_runtime()
+    runtime, _worker_runtime = _worker_runtime, None
+    if runtime is None:
+        return
+    try:
+        await runtime.resources.aclose()
+    except Exception:
+        logger.exception("Could not close the worker runtime after a crash.")
+
+
+async def _process_records(records: list[Any]) -> list[dict[str, str]]:
+    global _worker_runtime
     failures: list[dict[str, str]] = []
     for record in records:
-        if not await _process_record(_worker_runtime, record):
-            failures.append({"itemIdentifier": record["messageId"]})
+        parsed = _parse_record(record)
+        if parsed is None:
+            # Redelivering a malformed message can never succeed; let Lambda delete it.
+            message_id = record.get("messageId") if isinstance(record, dict) else None
+            logger.warning("Dropping malformed job queue message %s.", message_id)
+            continue
+        message_id, job = parsed
+        if _worker_runtime is None:
+            _worker_runtime = await _open_worker_runtime()
+        if not await _process_job(_worker_runtime, job):
+            failures.append({"itemIdentifier": message_id})
+            # The crash may come from a broken resource (e.g. a dead database connection), so
+            # the redelivery must not reuse this runtime.
+            await _discard_worker_runtime()
     return failures
 
 
