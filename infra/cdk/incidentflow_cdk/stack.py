@@ -1,4 +1,4 @@
-"""The IncidentFlow application: dashboard, sign-in, API, job queue, and the four Lambdas.
+"""The IncidentFlow application: dashboard, sign-in, API, job queue, and the six Lambdas.
 
 Dependency order (CloudFormation needs it acyclic): the app client's callback URL uses the
 distribution's domain; the distribution's `/api/*` origin uses only the HTTP API resource; the
@@ -6,6 +6,7 @@ JWT authorizer and the route (separate resources) use the API and the app client
 "client -> distribution -> API -> authorizer -> client" therefore never closes.
 """
 
+from dataclasses import dataclass
 from typing import Any
 
 from aws_cdk import CfnOutput, Duration, Fn, RemovalPolicy, Stack
@@ -38,6 +39,8 @@ from incidentflow_cdk.names import (
 WORKER_TIMEOUT = Duration.seconds(900)
 # Persist a run that hits its deadline as FAILED before Lambda kills the process at 900 s.
 JOB_TIMEOUT_SECONDS = "780"
+# The demo simulator owns alarms with this prefix (also the ingestion default).
+DEMO_ALARM_PREFIX = "if-"
 BUDGET_USD = 10
 BUDGET_THRESHOLDS = (50, 80, 100)
 
@@ -58,6 +61,28 @@ function handler(event) {
 _JOBS_ENTRYPOINT = ["python", "-m", "awslambdaric"]
 
 
+@dataclass(frozen=True)
+class IntegrationSettings:
+    """Non-secret names the worker's integrations need (from `cdk.json` context)."""
+
+    github_repositories: str
+    cloudwatch_log_groups: str
+    pinecone_index_name: str
+    pinecone_namespace: str
+    mongodb_database: str
+    mongodb_events_collection: str
+
+    def as_environment(self) -> dict[str, str]:
+        return {
+            "GITHUB_MCP_REPOSITORIES": self.github_repositories,
+            "CLOUDWATCH_MCP_LOG_GROUPS": self.cloudwatch_log_groups,
+            "PINECONE_INDEX_NAME": self.pinecone_index_name,
+            "PINECONE_NAMESPACE": self.pinecone_namespace,
+            "MONGODB_MCP_DATABASE": self.mongodb_database,
+            "MONGODB_MCP_EVENTS_COLLECTION": self.mongodb_events_collection,
+        }
+
+
 class IncidentFlowStack(Stack):
     def __init__(
         self,
@@ -66,6 +91,8 @@ class IncidentFlowStack(Stack):
         *,
         image_tag: str,
         budget_email: str | None,
+        integration_settings: IntegrationSettings,
+        ingest_alarm_prefix: str,
         **kwargs: Any,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -115,6 +142,8 @@ class IncidentFlowStack(Stack):
             "", [f"https://cognito-idp.{self.region}.amazonaws.com/", user_pool.user_pool_id]
         )
 
+        demo = self._demo_function()
+
         api_function = self._function(
             "ApiFunction",
             image="api",
@@ -127,9 +156,14 @@ class IncidentFlowStack(Stack):
                 "OIDC_CLIENT_ID": client.user_pool_client_id,
                 "AWS_LWA_PORT": "8000",
                 "AWS_LWA_READINESS_CHECK_PATH": "/health",
+                "DEMO_ENABLED": "true",
+                "DEMO_FUNCTION_NAME": demo.function_name,
             },
         )
         queue.grant_send_messages(api_function)
+        api_function.add_to_role_policy(
+            iam.PolicyStatement(actions=["lambda:InvokeFunction"], resources=[demo.function_arn])
+        )
         http_api.add_routes(
             path="/api/{proxy+}",
             methods=[apigwv2.HttpMethod.ANY],
@@ -162,6 +196,7 @@ class IncidentFlowStack(Stack):
                 "PINECONE_ENABLED": "true",
                 "GITHUB_MCP_ENABLED": "true",
                 "CLOUDWATCH_MCP_ENABLED": "true",
+                **integration_settings.as_environment(),
             },
         )
         worker.add_event_source(
@@ -213,6 +248,8 @@ class IncidentFlowStack(Stack):
             targets=[targets.LambdaFunction(sweeper)],
         )
 
+        self._alarm_ingestion(ingest_alarm_prefix)
+
         migrate = self._function(
             "MigrateFunction",
             image="jobs",
@@ -232,6 +269,96 @@ class IncidentFlowStack(Stack):
         CfnOutput(self, "UserPoolClientId", value=client.user_pool_client_id)
         CfnOutput(self, "CognitoDomain", value=domain.base_url())
         CfnOutput(self, "MigrateFunctionName", value=migrate.function_name)
+
+    def _alarm_ingestion(self, alarm_prefix: str) -> None:
+        """Turn CloudWatch alarm state changes (prefix-matched) into incidents."""
+        ingest = self._function(
+            "IngestFunction",
+            image="jobs",
+            handler="ingest_handler",
+            timeout=Duration.seconds(30),
+            memory_size=512,
+            environment={"INGEST_ALARM_PREFIX": alarm_prefix},
+        )
+        ingest.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["cloudwatch:ListTagsForResource"],
+                resources=[self._alarm_arn(alarm_prefix)],
+            )
+        )
+        events.Rule(
+            self,
+            "AlarmIngestRule",
+            event_pattern=events.EventPattern(
+                source=["aws.cloudwatch"],
+                detail_type=["CloudWatch Alarm State Change"],
+                detail={
+                    "state": {"value": ["ALARM"]},
+                    "alarmName": [{"prefix": alarm_prefix}],
+                },
+            ),
+            targets=[
+                targets.LambdaFunction(ingest, retry_attempts=2, max_event_age=Duration.minutes(5))
+            ],
+        )
+
+    def _demo_function(self) -> lambda_.DockerImageFunction:
+        """The demo simulator: writes fake service logs/metrics and drives `if-*` alarms."""
+        demo = self._function(
+            "DemoFunction",
+            image="jobs",
+            handler="demo_handler",
+            timeout=Duration.seconds(300),
+            memory_size=512,
+            environment={"DEMO_INTERVAL_SECONDS": "8"},
+        )
+        # One run at a time, never retried: a retry would replay the whole outage story.
+        cfn_function = demo.node.default_child
+        assert isinstance(cfn_function, lambda_.CfnFunction)
+        cfn_function.reserved_concurrent_executions = 1
+        lambda_.EventInvokeConfig(
+            self,
+            "DemoInvokeConfig",
+            function=demo,
+            retry_attempts=0,
+            max_event_age=Duration.seconds(60),
+        )
+        demo_group = f"arn:aws:logs:{self.region}:{self.account}:log-group:/incidentflow/demo/*"
+        demo.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["logs:CreateLogGroup", "logs:PutRetentionPolicy", "logs:TagResource"],
+                resources=[demo_group],
+            )
+        )
+        demo.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["logs:CreateLogStream", "logs:PutLogEvents"],
+                resources=[demo_group, f"{demo_group}:*"],
+            )
+        )
+        # Metrics have no ARN; the namespace condition is the scope.
+        demo.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["cloudwatch:PutMetricData"],
+                resources=["*"],
+                conditions={"StringEquals": {"cloudwatch:namespace": "IncidentFlow/Demo"}},
+            )
+        )
+        demo.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "cloudwatch:PutMetricAlarm",
+                    "cloudwatch:SetAlarmState",
+                    "cloudwatch:TagResource",
+                    "cloudwatch:DescribeAlarms",
+                ],
+                resources=[self._alarm_arn(DEMO_ALARM_PREFIX)],
+            )
+        )
+        return demo
+
+    def _alarm_arn(self, prefix: str) -> str:
+        return f"arn:aws:cloudwatch:{self.region}:{self.account}:alarm:{prefix}*"
 
     def _distribution(
         self, bucket: s3.Bucket, http_api: apigwv2.HttpApi

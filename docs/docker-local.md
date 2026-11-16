@@ -112,3 +112,38 @@ opt-in override file; see [cloudwatch-agent.md](cloudwatch-agent.md#docker-compo
 ```powershell
 docker compose -f docker-compose.yml -f docker-compose.cloudwatch.yml up --build -d
 ```
+
+## Local demo
+
+The API can replay synthetic outages through real CloudWatch alarms. It uses its own AWS profile,
+`incidentflow-demo`, separate from the read-only `incidentflow` profile the agents use.
+
+1. Create the scoped role (run from `apps/api`, with an administrator profile used only here):
+
+   ```powershell
+   python scripts/seed_cloudwatch_demo.py --profile <admin> --create-demo-role
+   ```
+
+   The admin profile must resolve to an IAM user or role ARN that can be a trust principal; an
+   SSO or assumed-role session ARN is rejected.
+
+   This creates `IncidentFlowDemoSimulator` (tagged `project=incidentflow`) and writes the profile
+   to `~/.aws/config`. The equivalent profile is:
+
+   ```ini
+   [profile incidentflow-demo]
+   role_arn = arn:aws:iam::<account>:role/IncidentFlowDemoSimulator
+   source_profile = <admin>
+   region = us-east-1
+   ```
+
+2. Set `DEMO_ENABLED=true` (and optionally `DEMO_AWS_PROFILE`, default `incidentflow-demo`) in
+   `apps/api/.env`, and start the stack with the CloudWatch override so the
+   API container mounts `~/.aws`.
+3. Open the incidents page. The demo starts by itself (10-minute cooldown); the "Run demo"
+   button replays it.
+
+Do not export `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY`; they override the profiles.
+
+Side effect: if the cloud stack is deployed in the same account and region, a local run also
+fires the cloud EventBridge rule, so the cloud database receives the same incidents.

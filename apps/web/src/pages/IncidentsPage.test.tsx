@@ -1,6 +1,7 @@
-import { render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { act } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Incident, Investigation } from '../api'
 import { IncidentsPage } from './IncidentsPage'
 
@@ -39,6 +40,23 @@ describe('IncidentsPage queue', () => {
     expect(items[1]).toHaveTextContent('Not investigated')
   })
 
+  it('hides closed and resolved incidents from the list and the counts', () => {
+    const withClosed = [
+      ...incidents,
+      { ...incident('old', 'Old checkout alarm', 'CRITICAL', '2026-11-02T09:00:00Z'), status: 'CLOSED' } as Incident,
+      { ...incident('done', 'Fixed login', 'HIGH', '2026-11-02T10:00:00Z'), status: 'RESOLVED' } as Incident,
+    ]
+    render(
+      <IncidentsPage incidents={withClosed} investigations={investigations} isCreateFormOpen={false} onCloseCreateForm={vi.fn()} onCreateIncident={vi.fn()} onSelectIncident={vi.fn()} onStartInvestigation={vi.fn()} selectedIncident={null} />,
+    )
+
+    const titles = within(screen.getByRole('list')).getAllByRole('listitem').map((item) => item.querySelector('strong')?.textContent)
+    expect(titles).toEqual(['Checkout down', 'Login failures', 'Email delays'])
+    expect(screen.getByRole('button', { name: /^All/ })).toHaveTextContent('3')
+    expect(screen.getByRole('button', { name: /^Critical/ })).toHaveTextContent('1')
+    expect(screen.getByRole('button', { name: /^High/ })).toHaveTextContent('1')
+  })
+
   it('disables the launch button while the start request is in flight', async () => {
     const onStart = renderSelected(true)
 
@@ -66,5 +84,108 @@ describe('IncidentsPage queue', () => {
     expect(items).toHaveLength(1)
     expect(items[0]).toHaveTextContent('Login failures')
     expect(screen.getByRole('button', { name: /^High/ })).toHaveAttribute('aria-pressed', 'true')
+  })
+})
+
+const alarm = (id: string, created_at: string) => ({
+  ...incident(id, `Alarm ${id}`, 'HIGH', created_at),
+  source: 'CLOUDWATCH_ALARM', service: 'checkout-api', external_id: `arn:${id}`,
+}) as Incident
+
+function pageProps(overrides: Partial<Parameters<typeof IncidentsPage>[0]> = {}) {
+  return {
+    incidents, investigations, isCreateFormOpen: false, onCloseCreateForm: vi.fn(),
+    onCreateIncident: vi.fn(), onSelectIncident: vi.fn(), onStartInvestigation: vi.fn(),
+    selectedIncident: null, demoEnabled: false, isDemoStarting: false,
+    onRunDemo: vi.fn(async () => undefined), onAutoStartDemo: vi.fn(async () => undefined),
+    ...overrides,
+  }
+}
+
+describe('IncidentsPage live ingestion', () => {
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks() })
+
+  it('auto-starts the demo once when the incidents page opens and the demo is enabled', () => {
+    const props = pageProps({ demoEnabled: true })
+    const { rerender } = render(<IncidentsPage {...props} />)
+    rerender(<IncidentsPage {...props} incidents={[...incidents]} />)
+    expect(props.onAutoStartDemo).toHaveBeenCalledTimes(1)
+  })
+
+  it('auto-starts again after the page is left and reopened', () => {
+    const props = pageProps({ demoEnabled: true })
+    render(<IncidentsPage {...props} />).unmount()
+    render(<IncidentsPage {...props} />)
+    expect(props.onAutoStartDemo).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not auto-start when the demo is disabled', () => {
+    const props = pageProps({ demoEnabled: false })
+    render(<IncidentsPage {...props} />)
+    expect(props.onAutoStartDemo).not.toHaveBeenCalled()
+  })
+
+  it('shows Run demo only when the demo is enabled', () => {
+    const { unmount } = render(<IncidentsPage {...pageProps()} />)
+    expect(screen.queryByRole('button', { name: 'Run demo' })).toBeNull()
+    unmount()
+    render(<IncidentsPage {...pageProps({ demoEnabled: true })} />)
+    expect(screen.getByRole('button', { name: 'Run demo' })).toBeEnabled()
+  })
+
+  it('disables Run demo for 10 seconds after a click and shows "Demo running…"', async () => {
+    vi.useFakeTimers()
+    const props = pageProps({ demoEnabled: true })
+    render(<IncidentsPage {...props} />)
+    await act(async () => { screen.getByRole('button', { name: 'Run demo' }).click() })
+    expect(props.onRunDemo).toHaveBeenCalledTimes(1)
+    const busy = screen.getByRole('button', { name: 'Demo running…' })
+    expect(busy).toBeDisabled()
+    act(() => { vi.advanceTimersByTime(9_000) })
+    expect(screen.getByRole('button', { name: 'Demo running…' })).toBeDisabled()
+    act(() => { vi.advanceTimersByTime(1_500) })
+    expect(screen.getByRole('button', { name: 'Run demo' })).toBeEnabled()
+  })
+
+  it('shows the service and a CloudWatch alarm badge for alarm incidents', () => {
+    render(<IncidentsPage {...pageProps({ incidents: [alarm('a1', '2026-11-03T10:00:00Z')] })} />)
+    const row = within(screen.getByRole('list')).getByRole('listitem')
+    expect(row).toHaveTextContent('checkout-api')
+    expect(row).toHaveTextContent('CloudWatch alarm')
+  })
+
+  it('shows a Manual badge for manual incidents', () => {
+    const manual = { ...incident('m1', 'Manual one', 'LOW', '2026-11-03T10:00:00Z'), source: 'MANUAL', service: null, external_id: null } as Incident
+    render(<IncidentsPage {...pageProps({ incidents: [manual] })} />)
+    expect(within(screen.getByRole('list')).getByRole('listitem')).toHaveTextContent('Manual')
+  })
+
+  it('highlights incidents that were not in the previous list for 4 seconds', () => {
+    vi.useFakeTimers()
+    const first = [alarm('a1', '2026-11-03T10:00:00Z')]
+    const props = pageProps({ incidents: first })
+    const { rerender } = render(<IncidentsPage {...props} />)
+    expect(document.querySelector('li.is-new')).toBeNull()
+    rerender(<IncidentsPage {...props} incidents={[...first, alarm('a2', '2026-11-03T10:05:00Z')]} />)
+    const marked = document.querySelectorAll('li.is-new')
+    expect(marked).toHaveLength(1)
+    expect(marked[0]).toHaveTextContent('Alarm a2')
+    act(() => { vi.advanceTimersByTime(4_100) })
+    expect(document.querySelector('li.is-new')).toBeNull()
+  })
+
+  it('shows detection time relative to now', () => {
+    const now = Date.parse('2026-11-03T10:00:12Z')
+    vi.spyOn(Date, 'now').mockReturnValue(now)
+    const rows = [
+      alarm('s', '2026-11-03T10:00:00Z'),
+      alarm('m', '2026-11-03T09:55:00Z'),
+      alarm('h', '2026-11-03T07:00:00Z'),
+    ]
+    render(<IncidentsPage {...pageProps({ incidents: rows })} />)
+    const text = within(screen.getByRole('list')).getAllByRole('listitem').map((item) => item.textContent).join('|')
+    expect(text).toContain('12 s ago')
+    expect(text).toContain('5 min ago')
+    expect(text).toContain('3 h ago')
   })
 })

@@ -3,6 +3,7 @@
 # Set AWS_CONFIG_DIR in the root .env to the host directory that holds config and credentials.
 services:
   api:
+    # DEMO_ENABLED / DEMO_AWS_PROFILE come from apps/api/.env; the demo simulator uses this mount.
     volumes:
       - ${AWS_CONFIG_DIR:?Set AWS_CONFIG_DIR to the host ~/.aws directory}:/home/incidentflow/.aws:ro
   worker:

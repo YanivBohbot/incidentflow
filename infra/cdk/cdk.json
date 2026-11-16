@@ -4,5 +4,13 @@
     "include": ["**"],
     "exclude": ["README.md", "cdk*.json", "requirements*.txt", "**/__pycache__", "tests", ".venv"]
   },
-  "context": {}
+  "context": {
+    "githubRepositories": "YanivBohbot/incidentflow",
+    "cloudwatchLogGroups": "/incidentflow/demo/payment-service,/incidentflow/demo/checkout-api,/incidentflow/demo/order-service,/incidentflow/demo/auth-service,/incidentflow/demo/inventory-service,/incidentflow/demo/search-api,/incidentflow/demo/notification-service,/incidentflow/demo/refund-service",
+    "pineconeIndexName": "incidentflow-runbooks",
+    "pineconeNamespace": "official-public-docs",
+    "mongodbDatabase": "incidentflow_dev",
+    "mongodbEventsCollection": "operational_events",
+    "ingestAlarmPrefix": "if-"
+  }
 }
