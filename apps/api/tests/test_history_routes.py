@@ -115,3 +115,10 @@ def test_history_filters_by_category(client, incident) -> None:
 
     assert len(body["events"]) == 4
     assert other["events"] == []
+
+
+def test_history_accepts_hide_untouched(client, incident) -> None:
+    response = client.get("/api/history", params={"hide_untouched": "true"})
+
+    assert response.status_code == 200
+    assert len(response.json()["events"]) == 4

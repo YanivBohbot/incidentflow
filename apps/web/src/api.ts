@@ -34,7 +34,7 @@ export type IncidentEvent = {
 export type IncidentEventPage = { events: IncidentEvent[], next_before: string | null }
 
 /** `category` is an incident's service, or its title when it has none. */
-export type HistoryQuery = { category?: string, kinds?: IncidentEventKind[], before?: string }
+export type HistoryQuery = { category?: string, kinds?: IncidentEventKind[], hideUntouched?: boolean, before?: string }
 
 export type DemoRun = {
   started: boolean
@@ -197,10 +197,11 @@ export const api = {
   startDemoRun: (onlyIfIdle = false) =>
     request<DemoRun>(`/demo/runs${onlyIfIdle ? '?only_if_idle=true' : ''}`, { method: 'POST' }),
   getReadiness: () => requestOperational<Readiness>('/health/ready'),
-  getHistory: ({ category, kinds, before }: HistoryQuery) => {
+  getHistory: ({ category, kinds, hideUntouched, before }: HistoryQuery) => {
     const params = new URLSearchParams()
     if (category) params.set('category', category)
     if (kinds?.length) params.set('kinds', kinds.join(','))
+    if (hideUntouched) params.set('hide_untouched', 'true')
     if (before) params.set('before', before)
     const query = params.toString()
     return request<IncidentEventPage>(`/history${query ? `?${query}` : ''}`)

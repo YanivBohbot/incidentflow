@@ -433,3 +433,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .chip-label { display:inline-block; max-width:120px; overflow:hidden; text-overflow:ellipsis; vertical-align:bottom; white-space:nowrap; }
 .history-filter-gap { flex:1 1 auto; }
 .back-to-history { margin:0 0 12px; }
+.history-card { border-top:1px solid #edf1f5; margin:0 8px; padding:8px 0; }
+.history-card h3 { font-size:13px; margin:0 0 4px; }
+.history-card-title { background:transparent; border:0; color:var(--if-ink); cursor:pointer; font:inherit; font-weight:800; padding:0; text-align:left; }
+.history-card-title:hover { color:var(--if-primary); }
+.history-card.is-selected { background:#f1fbfa; border-radius:8px; padding:8px; }
+.history-card .history-list { padding:0; }

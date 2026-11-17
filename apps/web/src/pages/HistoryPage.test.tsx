@@ -2,16 +2,18 @@ import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../api'
-import type { Incident, IncidentEvent } from '../api'
+import type { Incident, IncidentEvent, Investigation } from '../api'
 import { DECISION_KINDS, HistoryPage } from './HistoryPage'
 
-const incident = (id: string, title: string, service: string | null) => ({ id, title, service }) as Incident
+const incident = (id: string, title: string, service: string | null, status = 'OPEN') => ({ id, title, service, status, created_at: '2026-11-17T12:00:00Z' }) as Incident
 const incidents = [
   incident('inc-1', 'Checkout down', 'checkout-api'),
   incident('inc-2', 'Checkout down again', 'checkout-api'),
   incident('inc-3', 'Login failures', 'auth-service'),
   incident('inc-4', 'Printer on fire', null),
+  incident('inc-5', 'Checkout down, untouched', 'checkout-api', 'CLOSED'),
 ]
+const investigations = [{ id: 'inv-1', incident_id: 'inc-2' }] as Investigation[]
 
 const event = (overrides: Partial<IncidentEvent>): IncidentEvent => ({
   id: 'e', incident_id: 'inc-1', investigation_id: null, kind: 'INCIDENT_CREATED',
@@ -34,7 +36,7 @@ function mockApi(nextBefore: string | null = null) {
 }
 
 function renderPage(props: Partial<Parameters<typeof HistoryPage>[0]> = {}) {
-  return render(<HistoryPage incidents={incidents} onOpenInvestigation={vi.fn()} {...props} />)
+  return render(<HistoryPage incidents={incidents} investigations={investigations} onOpenInvestigation={vi.fn()} {...props} />)
 }
 
 const group = (name: string) => screen.findByRole('region', { name })
@@ -44,12 +46,15 @@ const summaries = (element: HTMLElement) =>
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('HistoryPage', () => {
-  it('groups events by service, falling back to the title, newest activity first', async () => {
+  it('groups events by service, one card per incident with its events in time order', async () => {
     mockApi()
     renderPage()
 
     const checkout = await group('checkout-api')
-    expect(summaries(checkout)).toEqual(['Marked resolved by alice', 'Jira write approved by alice', 'Incident created'])
+    const cards = within(checkout).getAllByRole('article')
+    expect(cards.map((card) => card.getAttribute('aria-label'))).toEqual(['Checkout down', 'Checkout down again'])
+    expect(summaries(cards[0])).toEqual(['Incident created', 'Marked resolved by alice'])
+    expect(summaries(cards[1])).toEqual(['Jira write approved by alice'])
     const names = screen.getAllByRole('region').map((region) => region.getAttribute('aria-label'))
     expect(names).toEqual(['checkout-api', 'auth-service', 'Demo runs'])
   })
@@ -70,6 +75,8 @@ describe('HistoryPage', () => {
 
     const filters = screen.getByRole('group', { name: 'Filter history' })
     expect(within(filters).getByRole('button', { name: 'checkout-api 2' })).toBeInTheDocument()
+    await userEvent.click(within(filters).getByRole('button', { name: 'Show untouched' }))
+    expect(within(filters).getByRole('button', { name: 'checkout-api 3' })).toBeInTheDocument()
     expect(within(filters).getByRole('button', { name: 'auth-service 1' })).toBeInTheDocument()
     expect(within(filters).getByRole('button', { name: 'Printer on fire 1' })).toBeInTheDocument()
   })
@@ -80,7 +87,7 @@ describe('HistoryPage', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'auth-service 1' }))
 
-    expect(getHistory).toHaveBeenLastCalledWith({ category: 'auth-service', kinds: undefined, before: undefined })
+    expect(getHistory).toHaveBeenLastCalledWith({ category: 'auth-service', kinds: undefined, hideUntouched: true, before: undefined })
   })
 
   it('the decisions chip filters to decision kinds', async () => {
@@ -89,8 +96,18 @@ describe('HistoryPage', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Decisions' }))
 
-    expect(getHistory).toHaveBeenLastCalledWith({ category: undefined, kinds: DECISION_KINDS, before: undefined })
+    expect(getHistory).toHaveBeenLastCalledWith({ category: undefined, kinds: DECISION_KINDS, hideUntouched: true, before: undefined })
     expect(DECISION_KINDS).toEqual(['REVIEW_DECIDED', 'INCIDENT_RESOLVED', 'LESSON_SAVED'])
+  })
+
+  it('hides incidents closed without investigation unless asked', async () => {
+    const { getHistory } = mockApi()
+    renderPage()
+
+    await screen.findByRole('region', { name: 'checkout-api' })
+    expect(getHistory).toHaveBeenLastCalledWith({ category: undefined, kinds: undefined, hideUntouched: true, before: undefined })
+    await userEvent.click(screen.getByRole('button', { name: 'Show untouched' }))
+    expect(getHistory).toHaveBeenLastCalledWith({ category: undefined, kinds: undefined, hideUntouched: false, before: undefined })
   })
 
   it('more than six categories hide behind a +N chip', async () => {
@@ -108,7 +125,7 @@ describe('HistoryPage', () => {
     renderPage()
 
     const rows = within(await group('checkout-api')).getAllByRole('listitem')
-    expect(rows[2]).toHaveTextContent('≈')
+    expect(rows[0]).toHaveTextContent('≈')
     await userEvent.click(within(rows[0]).getByRole('button'))
 
     expect(getIncidentEvents).toHaveBeenCalledWith('inc-1')
@@ -120,7 +137,7 @@ describe('HistoryPage', () => {
     const { getIncidentEvents } = mockApi()
     const { rerender } = renderPage()
 
-    rerender(<HistoryPage focusIncidentId="inc-3" focusRequest={1} incidents={incidents} onOpenInvestigation={vi.fn()} />)
+    rerender(<HistoryPage focusIncidentId="inc-3" focusRequest={1} incidents={incidents} investigations={investigations} onOpenInvestigation={vi.fn()} />)
 
     expect(await screen.findByRole('heading', { name: 'Login failures' })).toBeInTheDocument()
     expect(getIncidentEvents).toHaveBeenCalledWith('inc-3')
@@ -132,7 +149,7 @@ describe('HistoryPage', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Load more' }))
 
-    expect(getHistory).toHaveBeenLastCalledWith({ category: undefined, kinds: undefined, before: 'cursor-1' })
+    expect(getHistory).toHaveBeenLastCalledWith({ category: undefined, kinds: undefined, hideUntouched: true, before: 'cursor-1' })
   })
 
   it('the periodic refresh keeps the older pages already loaded', async () => {
@@ -152,8 +169,8 @@ describe('HistoryPage', () => {
     await vi.advanceTimersByTimeAsync(10_000)
     await screen.findByText('Newest event')
 
-    expect(summaries(await group('checkout-api'))).toEqual([
-      'Newest event', 'Marked resolved by alice', 'Jira write approved by alice', 'Incident created', 'Older event',
+    expect(summaries(within(await group('checkout-api')).getAllByRole('article')[0])).toEqual([
+      'Older event', 'Incident created', 'Marked resolved by alice', 'Newest event',
     ])
     expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
     expect(getHistory).toHaveBeenCalledTimes(3)

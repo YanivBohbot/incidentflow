@@ -1,7 +1,7 @@
 /** History page: events grouped by incident category on the left, one incident's journal on the right. */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
-import type { Incident, IncidentEvent, IncidentEventKind } from '../api'
+import type { Incident, IncidentEvent, IncidentEventKind, Investigation } from '../api'
 import { EmptyState } from '../components/ui/EmptyState'
 
 export const DECISION_KINDS: IncidentEventKind[] = ['REVIEW_DECIDED', 'INCIDENT_RESOLVED', 'LESSON_SAVED']
@@ -29,6 +29,8 @@ const eventCategory = (event: IncidentEvent) => event.incident_service || event.
 
 type HistoryPageProps = {
   incidents: Incident[]
+  /** Used to tell incidents never investigated, which are hidden by default once closed. */
+  investigations: Investigation[]
   /** Incident to open, asked by a "View journal" link; a new focusRequest re-applies it. */
   focusIncidentId?: string
   focusRequest?: number
@@ -53,12 +55,13 @@ function EventFacts({ event }: { event: IncidentEvent }) {
   return facts.length ? <small className="history-facts">{facts.join(' · ')}</small> : null
 }
 
-export function HistoryPage({ incidents, focusIncidentId, focusRequest, active = true, onOpenInvestigation }: HistoryPageProps) {
+export function HistoryPage({ incidents, investigations, focusIncidentId, focusRequest, active = true, onOpenInvestigation }: HistoryPageProps) {
   const [events, setEvents] = useState<IncidentEvent[]>([])
   const [nextBefore, setNextBefore] = useState<string | null>(null)
   const [category, setCategory] = useState<string | undefined>(undefined)
   const [decisionsOnly, setDecisionsOnly] = useState(false)
   const [showAllChips, setShowAllChips] = useState(false)
+  const [showUntouched, setShowUntouched] = useState(false)
   const [toggled, setToggled] = useState<Record<string, boolean>>({})
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | undefined>(focusIncidentId)
   const [journal, setJournal] = useState<IncidentEvent[]>([])
@@ -70,27 +73,41 @@ export function HistoryPage({ incidents, focusIncidentId, focusRequest, active =
 
   /** Categories with their incident count, most incidents first. */
   const chips = useMemo(() => {
+    const investigated = new Set(investigations.map((item) => item.incident_id))
+    const counted = showUntouched ? incidents : incidents.filter((item) => item.status !== 'CLOSED' || investigated.has(item.id))
     const counts = new Map<string, number>()
-    for (const item of incidents) counts.set(incidentCategory(item), (counts.get(incidentCategory(item)) ?? 0) + 1)
+    for (const item of counted) counts.set(incidentCategory(item), (counts.get(incidentCategory(item)) ?? 0) + 1)
     return [...counts.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
-  }, [incidents])
+  }, [incidents, investigations, showUntouched])
   const shownChips = showAllChips ? chips : chips.slice(0, VISIBLE_CHIPS)
 
-  /** Loaded events grouped by category, ordered by their latest activity. */
+  /** Loaded events by category, then one card per incident read in time order. */
   const groups = useMemo(() => {
-    const byName = new Map<string, IncidentEvent[]>()
-    for (const item of events) byName.set(eventCategory(item), [...(byName.get(eventCategory(item)) ?? []), item])
-    return [...byName.entries()].map(([name, items]) => ({
+    const byName = new Map<string, Map<string, IncidentEvent[]>>()
+    for (const item of events) {
+      const cards = byName.get(eventCategory(item)) ?? new Map<string, IncidentEvent[]>()
+      const key = item.incident_id ?? DEMO_RUNS
+      cards.set(key, [...(cards.get(key) ?? []), item])
+      byName.set(eventCategory(item), cards)
+    }
+    const chronological = (left: IncidentEvent, right: IncidentEvent) =>
+      left.occurred_at.localeCompare(right.occurred_at) || left.id.localeCompare(right.id)
+    return [...byName.entries()].map(([name, cards]) => ({
       name,
-      items,
-      incidentCount: new Set(items.map((item) => item.incident_id).filter(Boolean)).size,
+      latest: [...cards.values()][0][0],
+      cards: [...cards.entries()].map(([key, items]) => ({
+        key,
+        incidentId: key === DEMO_RUNS ? undefined : key,
+        title: items[0].incident_title ?? DEMO_RUNS,
+        items: [...items].sort(chronological),
+      })),
     }))
   }, [events])
 
   /** Fetch the first page: a reset replaces the list, a refresh only adds new events on top. */
   const loadFirstPage = useCallback(async (mode: 'reset' | 'refresh') => {
     try {
-      const page = await api.getHistory({ category, kinds, before: undefined })
+      const page = await api.getHistory({ category, kinds, hideUntouched: !showUntouched, before: undefined })
       if (mode === 'reset' || !paged.current) {
         paged.current = false
         setEvents(page.events)
@@ -105,7 +122,7 @@ export function HistoryPage({ incidents, focusIncidentId, focusRequest, active =
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not load the history.')
     }
-  }, [category, kinds])
+  }, [category, kinds, showUntouched])
 
   useEffect(() => { void loadFirstPage('reset') }, [loadFirstPage])
 
@@ -132,7 +149,7 @@ export function HistoryPage({ incidents, focusIncidentId, focusRequest, active =
 
   async function loadMore() {
     if (!nextBefore) return
-    const page = await api.getHistory({ category, kinds, before: nextBefore })
+    const page = await api.getHistory({ category, kinds, hideUntouched: !showUntouched, before: nextBefore })
     paged.current = true
     setEvents((current) => [...current, ...page.events])
     setNextBefore(page.next_before)
@@ -164,6 +181,7 @@ export function HistoryPage({ incidents, focusIncidentId, focusRequest, active =
             </button>
           )}
           <span className="history-filter-gap" />
+          <button aria-pressed={showUntouched} className={`severity-chip ${showUntouched ? 'is-active' : ''}`} onClick={() => setShowUntouched((value) => !value)} title="Incidents closed without ever being investigated, mostly old demo runs" type="button">Show untouched</button>
           <button aria-pressed={decisionsOnly} className={`severity-chip ${decisionsOnly ? 'is-active' : ''}`} onClick={() => setDecisionsOnly((value) => !value)} type="button">Decisions</button>
         </div>
         {error && <p className="proposal-error" role="alert">{error}</p>}
@@ -176,24 +194,31 @@ export function HistoryPage({ incidents, focusIncidentId, focusRequest, active =
                   <button aria-expanded={open} className="history-group-heading" onClick={() => setToggled((current) => ({ ...current, [item.name]: !open }))} type="button">
                     <span aria-hidden="true">{open ? '▾' : '▸'}</span>
                     <strong>{item.name}</strong>
-                    <small>{item.incidentCount ? `${item.incidentCount} incident${item.incidentCount > 1 ? 's' : ''} · ` : ''}latest <EventTime event={item.items[0]} /></small>
+                    <small>{item.cards.length} {item.cards.length > 1 ? 'entries' : 'entry'} · latest <EventTime event={item.latest} /></small>
                   </button>
-                  {open && (
-                    <ol className="history-list">
-                      {item.items.map((entry) => (
-                        <li className={entry.incident_id === selectedIncidentId ? 'is-selected' : ''} key={entry.id}>
-                          <button disabled={!entry.incident_id} onClick={() => entry.incident_id && setSelectedIncidentId(entry.incident_id)} type="button">
-                            <span aria-hidden="true" className="history-icon">{KIND_ICONS[entry.kind]}</span>
-                            <span className="history-body">
-                              <strong>{entry.summary}</strong>
-                              <small><EventTime event={entry} /> · {entry.actor}</small>
-                              <EventFacts event={entry} />
-                            </span>
-                          </button>
-                        </li>
-                      ))}
-                    </ol>
-                  )}
+                  {open && item.cards.map((card) => (
+                    <article aria-label={card.title} className={`history-card ${card.incidentId && card.incidentId === selectedIncidentId ? 'is-selected' : ''}`} key={card.key}>
+                      <h3>
+                        {card.incidentId
+                          ? <button className="history-card-title" onClick={() => setSelectedIncidentId(card.incidentId)} type="button">{card.title}</button>
+                          : card.title}
+                      </h3>
+                      <ol className="history-list">
+                        {card.items.map((entry) => (
+                          <li key={entry.id}>
+                            <button disabled={!entry.incident_id} onClick={() => entry.incident_id && setSelectedIncidentId(entry.incident_id)} type="button">
+                              <span aria-hidden="true" className="history-icon">{KIND_ICONS[entry.kind]}</span>
+                              <span className="history-body">
+                                <strong>{entry.summary}</strong>
+                                <small><EventTime event={entry} /> · {entry.actor}</small>
+                                <EventFacts event={entry} />
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ol>
+                    </article>
+                  ))}
                 </section>
               )
             })}

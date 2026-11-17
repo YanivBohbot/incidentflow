@@ -65,7 +65,7 @@ function App() {
         {activePage === 'investigations' && <InvestigationsPage incidents={workspace.incidents} investigations={workspace.investigations} onConfirmLesson={workspace.confirmIncidentLesson} onResolveIncident={workspace.resolveIncident} onBackToHistory={fromHistory ? () => changePage('history') : undefined} onViewJournal={viewJournal} onSelectInvestigation={workspace.selectInvestigation} selectedInvestigation={workspace.selectedInvestigation} />}
         {activePage === 'approvals' && <ApprovalsPage incidents={workspace.incidents} investigations={workspace.investigations} onResolve={workspace.resolveHumanReview} />}
         <div hidden={activePage !== 'history'}>
-          <HistoryPage active={activePage === 'history'} focusIncidentId={journalIncidentId} focusRequest={journalRequest} incidents={workspace.incidents} onOpenInvestigation={openInvestigation} />
+          <HistoryPage active={activePage === 'history'} focusIncidentId={journalIncidentId} focusRequest={journalRequest} incidents={workspace.incidents} investigations={workspace.investigations} onOpenInvestigation={openInvestigation} />
         </div>
       </>}
     </AppShell>

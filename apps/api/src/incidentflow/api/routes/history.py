@@ -41,6 +41,7 @@ def list_history(
     events: EventRepositoryDep,
     incident_id: UUID | None = None,
     category: str | None = Query(default=None, description="Incident service, or title."),
+    hide_untouched: bool = Query(default=False, description="Drop closed, uninvestigated."),
     kinds: str | None = Query(default=None, description="Comma-separated event kinds."),
     before: str | None = Query(default=None, description="next_before of the previous page."),
     limit: int = Query(default=50, ge=1, le=MAX_PAGE_SIZE),
@@ -55,6 +56,7 @@ def list_history(
         incident_id=incident_id,
         kinds=_parse_kinds(kinds),
         category=category,
+        hide_untouched=hide_untouched,
         before=before,
         limit=limit,
     )

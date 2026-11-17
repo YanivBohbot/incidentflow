@@ -5,11 +5,16 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.orm import Session
 
 from incidentflow.domain.history.models import IncidentEvent, IncidentEventKind, IncidentEventPage
-from incidentflow.infrastructure.database.models import IncidentEventORM, IncidentORM
+from incidentflow.domain.incidents.models import IncidentStatus
+from incidentflow.infrastructure.database.models import (
+    IncidentEventORM,
+    IncidentORM,
+    InvestigationORM,
+)
 
 MAX_PAGE_SIZE = 200
 
@@ -88,12 +93,14 @@ class IncidentEventRepository:
         incident_id: UUID | None = None,
         kinds: Iterable[IncidentEventKind] | None = None,
         category: str | None = None,
+        hide_untouched: bool = False,
         before: str | None = None,
         limit: int = 50,
     ) -> IncidentEventPage:
         """Return events newest first with their incident, one page at a time.
 
         A category is an incident's service, or its title when it has no service.
+        hide_untouched drops incidents closed without ever being investigated (old demo runs).
         """
         limit = max(1, min(limit, MAX_PAGE_SIZE))
         statement = select(IncidentEventORM, IncidentORM.title, IncidentORM.service).outerjoin(
@@ -108,6 +115,15 @@ class IncidentEventRepository:
                 or_(
                     IncidentORM.service == category,
                     and_(IncidentORM.service.is_(None), IncidentORM.title == category),
+                )
+            )
+        if hide_untouched:
+            investigated = exists().where(InvestigationORM.incident_id == IncidentORM.id)
+            statement = statement.where(
+                or_(
+                    IncidentEventORM.incident_id.is_(None),
+                    IncidentORM.status != IncidentStatus.CLOSED,
+                    investigated,
                 )
             )
         if before:

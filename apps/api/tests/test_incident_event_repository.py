@@ -12,11 +12,15 @@ from incidentflow.domain.incidents.models import (
     IncidentCreate,
     IncidentPriority,
 )
+from incidentflow.domain.investigations.models import InvestigationCreate
 from incidentflow.infrastructure.database.base import Base
 from incidentflow.infrastructure.database.incident_event_repository import (
     IncidentEventRepository,
 )
 from incidentflow.infrastructure.database.incident_repository import IncidentRepository
+from incidentflow.infrastructure.database.investigation_repository import (
+    InvestigationRepository,
+)
 
 T0 = datetime(2026, 11, 17, 12, 0, tzinfo=UTC)
 
@@ -166,3 +170,36 @@ def test_history_filters_by_category_service_or_title(session, events) -> None:
     assert {item.incident_service for item in by_service.events} == {"checkout-api"}
     assert [item.incident_id for item in by_title.events] == [manual.id]
     assert by_title.events[0].incident_service is None
+
+
+def test_history_can_hide_incidents_closed_without_investigation(session, events) -> None:
+    repository = IncidentRepository(session)
+    untouched = repository.create_alarm_incident(
+        AlarmIncidentCreate(
+            title="Checkout down",
+            description="Closed by the next demo run.",
+            priority=IncidentPriority.CRITICAL,
+            service="checkout-api",
+            external_id="arn:aws:cloudwatch:us-east-1:1:alarm:b",
+        )
+    )
+    repository.close_open_alarm_incidents(["b"])
+    investigated = make_incident(session, "Login failures")
+    InvestigationRepository(session).create_investigation(
+        InvestigationCreate(
+            incident_id=investigated.id,
+            incident_request="Investigate login.",
+            incident_business_status="OPEN",
+        )
+    )
+    still_open = make_incident(session, "Printer on fire")
+    for minutes, incident in enumerate((untouched, investigated, still_open)):
+        record(events, IncidentEventKind.INCIDENT_CREATED, incident, minutes)
+    record(events, IncidentEventKind.DEMO_RUN_STARTED, None, 5)
+
+    shown = events.list_history(hide_untouched=True)
+    everything = events.list_history()
+
+    assert untouched.id not in {item.incident_id for item in shown.events}
+    assert {investigated.id, still_open.id, None} <= {item.incident_id for item in shown.events}
+    assert len(everything.events) == 4
