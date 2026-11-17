@@ -87,18 +87,29 @@ class IncidentEventRepository:
         *,
         incident_id: UUID | None = None,
         kinds: Iterable[IncidentEventKind] | None = None,
+        category: str | None = None,
         before: str | None = None,
         limit: int = 50,
     ) -> IncidentEventPage:
-        """Return events newest first with their incident title, one page at a time."""
+        """Return events newest first with their incident, one page at a time.
+
+        A category is an incident's service, or its title when it has no service.
+        """
         limit = max(1, min(limit, MAX_PAGE_SIZE))
-        statement = select(IncidentEventORM, IncidentORM.title).outerjoin(
+        statement = select(IncidentEventORM, IncidentORM.title, IncidentORM.service).outerjoin(
             IncidentORM, IncidentORM.id == IncidentEventORM.incident_id
         )
         if incident_id is not None:
             statement = statement.where(IncidentEventORM.incident_id == incident_id)
         if kinds:
             statement = statement.where(IncidentEventORM.kind.in_([kind.value for kind in kinds]))
+        if category:
+            statement = statement.where(
+                or_(
+                    IncidentORM.service == category,
+                    and_(IncidentORM.service.is_(None), IncidentORM.title == category),
+                )
+            )
         if before:
             moment, event_id = decode_cursor(before)
             statement = statement.where(
@@ -111,19 +122,20 @@ class IncidentEventRepository:
             IncidentEventORM.occurred_at.desc(), IncidentEventORM.id.desc()
         ).limit(limit + 1)
         rows = self.session.execute(statement).all()
-        events = [self._to_domain(orm, title) for orm, title in rows[:limit]]
+        events = [self._to_domain(orm, title, service) for orm, title, service in rows[:limit]]
         next_before = encode_cursor(events[-1]) if len(rows) > limit else None
         return IncidentEventPage(events=events, next_before=next_before)
 
     def list_for_incident(self, incident_id: UUID) -> list[IncidentEvent]:
         """Return one incident's journal, oldest first."""
         statement = (
-            select(IncidentEventORM, IncidentORM.title)
+            select(IncidentEventORM, IncidentORM.title, IncidentORM.service)
             .outerjoin(IncidentORM, IncidentORM.id == IncidentEventORM.incident_id)
             .where(IncidentEventORM.incident_id == incident_id)
             .order_by(IncidentEventORM.occurred_at, IncidentEventORM.id)
         )
-        return [self._to_domain(orm, title) for orm, title in self.session.execute(statement)]
+        rows = self.session.execute(statement)
+        return [self._to_domain(orm, title, service) for orm, title, service in rows]
 
     def incident_exists(self, incident_id: UUID) -> bool:
         return self.session.get(IncidentORM, incident_id) is not None
@@ -154,7 +166,9 @@ class IncidentEventRepository:
         return self.find_event(investigation_id, kind, **details) is not None
 
     @staticmethod
-    def _to_domain(orm: IncidentEventORM, title: str | None = None) -> IncidentEvent:
+    def _to_domain(
+        orm: IncidentEventORM, title: str | None = None, service: str | None = None
+    ) -> IncidentEvent:
         return IncidentEvent(
             id=orm.id,
             incident_id=orm.incident_id,
@@ -166,4 +180,5 @@ class IncidentEventRepository:
             details=dict(orm.details or {}),
             reconstructed=orm.reconstructed,
             incident_title=title,
+            incident_service=service,
         )

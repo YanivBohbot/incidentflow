@@ -107,3 +107,11 @@ def test_incident_journal_route_and_404(client, incident) -> None:
     assert journal.status_code == 200
     assert journal.json()[0]["kind"] == "INCIDENT_CREATED"
     assert client.get(f"/api/incidents/{uuid4()}/events").status_code == 404
+
+
+def test_history_filters_by_category(client, incident) -> None:
+    body = client.get("/api/history", params={"category": "Checkout down"}).json()
+    other = client.get("/api/history", params={"category": "auth-service"}).json()
+
+    assert len(body["events"]) == 4
+    assert other["events"] == []

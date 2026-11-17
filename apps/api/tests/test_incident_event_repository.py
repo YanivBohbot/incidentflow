@@ -7,7 +7,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from incidentflow.domain.history.models import IncidentEventKind
-from incidentflow.domain.incidents.models import IncidentCreate
+from incidentflow.domain.incidents.models import (
+    AlarmIncidentCreate,
+    IncidentCreate,
+    IncidentPriority,
+)
 from incidentflow.infrastructure.database.base import Base
 from incidentflow.infrastructure.database.incident_event_repository import (
     IncidentEventRepository,
@@ -128,3 +132,37 @@ def test_deleting_an_incident_deletes_its_events(session, events) -> None:
     assert IncidentRepository(session).delete_incident(incident.id) is True
 
     assert events.list_history().events == []
+
+
+def test_history_filters_by_category_service_or_title(session, events) -> None:
+    repository = IncidentRepository(session)
+    first = repository.create_alarm_incident(
+        AlarmIncidentCreate(
+            title="Checkout down",
+            description="First demo run.",
+            priority=IncidentPriority.CRITICAL,
+            service="checkout-api",
+            external_id="arn:aws:cloudwatch:us-east-1:1:alarm:a",
+        )
+    )
+    repository.close_open_alarm_incidents(["a"])
+    second = repository.create_alarm_incident(
+        AlarmIncidentCreate(
+            title="Checkout down again",
+            description="Second demo run.",
+            priority=IncidentPriority.CRITICAL,
+            service="checkout-api",
+            external_id="arn:aws:cloudwatch:us-east-1:1:alarm:a",
+        )
+    )
+    manual = make_incident(session, "Printer on fire")
+    for minutes, incident in enumerate((first, second, manual)):
+        record(events, IncidentEventKind.INCIDENT_CREATED, incident, minutes)
+
+    by_service = events.list_history(category="checkout-api")
+    by_title = events.list_history(category="Printer on fire")
+
+    assert {item.incident_id for item in by_service.events} == {first.id, second.id}
+    assert {item.incident_service for item in by_service.events} == {"checkout-api"}
+    assert [item.incident_id for item in by_title.events] == [manual.id]
+    assert by_title.events[0].incident_service is None

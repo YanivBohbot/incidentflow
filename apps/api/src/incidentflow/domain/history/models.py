@@ -41,6 +41,7 @@ class IncidentEvent(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
     reconstructed: bool = False
     incident_title: str | None = None
+    incident_service: str | None = None
 
 
 class IncidentEventPage(BaseModel):

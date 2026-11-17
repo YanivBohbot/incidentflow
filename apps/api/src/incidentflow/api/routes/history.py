@@ -40,6 +40,7 @@ def _parse_kinds(kinds: str | None) -> list[IncidentEventKind] | None:
 def list_history(
     events: EventRepositoryDep,
     incident_id: UUID | None = None,
+    category: str | None = Query(default=None, description="Incident service, or title."),
     kinds: str | None = Query(default=None, description="Comma-separated event kinds."),
     before: str | None = Query(default=None, description="next_before of the previous page."),
     limit: int = Query(default=50, ge=1, le=MAX_PAGE_SIZE),
@@ -51,7 +52,11 @@ def list_history(
         except ValueError as error:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid cursor.") from error
     return events.list_history(
-        incident_id=incident_id, kinds=_parse_kinds(kinds), before=before, limit=limit
+        incident_id=incident_id,
+        kinds=_parse_kinds(kinds),
+        category=category,
+        before=before,
+        limit=limit,
     )
 
 
