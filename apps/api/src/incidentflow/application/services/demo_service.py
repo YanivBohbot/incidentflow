@@ -160,14 +160,19 @@ class DemoService:
         now: Callable[[], datetime] = _utc_now,
         *,
         investigations: InvestigationRepository | None = None,
+        run_in_progress_seconds: float = 0,
     ) -> None:
         self._repository = repository
         self._investigations = investigations
         self._runner = runner
         self._auto_cooldown = timedelta(seconds=auto_cooldown_seconds)
+        self._run_in_progress = timedelta(seconds=run_in_progress_seconds)
         self._now = now
 
     def start_run(self, only_if_idle: bool = False) -> DemoRunStarted:
+        # Even a manual run waits for the current run: it would close the incidents being created.
+        if self._run_in_progress_now():
+            return DemoRunStarted(started=False)
         if only_if_idle and (self._recently_active() or self._under_investigation()):
             return DemoRunStarted(started=False)
 
@@ -177,8 +182,14 @@ class DemoService:
         return DemoRunStarted(started=True, run_id=run_id, closed_incidents=closed)
 
     def _recently_active(self) -> bool:
+        return self._created_within(self._auto_cooldown)
+
+    def _run_in_progress_now(self) -> bool:
+        return self._run_in_progress > timedelta(0) and self._created_within(self._run_in_progress)
+
+    def _created_within(self, window: timedelta) -> bool:
         latest = self._repository.latest_alarm_incident_created_at(DEMO_ALARM_NAMES)
-        return latest is not None and self._now() - latest < self._auto_cooldown
+        return latest is not None and self._now() - latest < window
 
     def _under_investigation(self) -> bool:
         if self._investigations is None:

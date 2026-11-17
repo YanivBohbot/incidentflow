@@ -38,6 +38,8 @@ from incidentflow.infrastructure.database.investigation_repository import (
 from incidentflow.infrastructure.database.models import IncidentORM, InvestigationORM
 
 NOW = datetime(2026, 11, 16, 12, 0, tzinfo=UTC)
+# A run fires one alarm every interval; a demo incident this recent means a run is in progress.
+RUN_IN_PROGRESS_SECONDS = 23
 COOLDOWN = 600
 
 
@@ -105,6 +107,7 @@ def build_client(
         COOLDOWN,
         lambda: NOW,
         investigations=InvestigationRepository(repository.session),
+        run_in_progress_seconds=RUN_IN_PROGRESS_SECONDS,
     )
     app.dependency_overrides[get_principal] = lambda: principal
     return TestClient(app)
@@ -113,6 +116,13 @@ def build_client(
 @pytest.fixture
 def enable_demo(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DEMO_ENABLED", "true")
+    get_settings.cache_clear()
+
+
+@pytest.fixture
+def disable_demo(monkeypatch: pytest.MonkeyPatch) -> None:
+    # An environment variable beats the developer's apps/api/.env, which may enable the demo.
+    monkeypatch.setenv("DEMO_ENABLED", "false")
     get_settings.cache_clear()
 
 
@@ -137,7 +147,14 @@ def set_created_at(session: Session, incident_id: Any, created_at: datetime) -> 
     session.commit()
 
 
-def test_demo_status_reports_disabled_by_default(client: TestClient) -> None:
+def create_finished_demo_incident(repository: IncidentRepository, session: Session) -> Any:
+    # Older than the run-in-progress window, so the previous run is over.
+    incident = repository.create_alarm_incident(alarm_data("if-checkout"))
+    set_created_at(session, incident.id, NOW - timedelta(hours=1))
+    return incident
+
+
+def test_demo_status_reports_disabled(client: TestClient, disable_demo: None) -> None:
     response = client.get("/api/demo")
 
     assert response.status_code == 200
@@ -148,7 +165,9 @@ def test_demo_status_reports_enabled(client: TestClient, enable_demo: None) -> N
     assert client.get("/api/demo").json() == {"enabled": True}
 
 
-def test_run_demo_is_404_when_disabled(operator_client: TestClient, fake_runner) -> None:
+def test_run_demo_is_404_when_disabled(
+    operator_client: TestClient, disable_demo: None, fake_runner: FakeRunner
+) -> None:
     response = operator_client.post("/api/demo/runs")
 
     assert response.status_code == 404
@@ -165,9 +184,13 @@ def test_run_demo_requires_operator(viewer_client: TestClient, enable_demo, fake
 
 
 def test_run_demo_closes_previous_demo_incidents_and_starts_runner(
-    operator_client: TestClient, enable_demo, fake_runner, repository: IncidentRepository
+    operator_client: TestClient,
+    enable_demo,
+    fake_runner,
+    repository: IncidentRepository,
+    session: Session,
 ) -> None:
-    previous = repository.create_alarm_incident(alarm_data("if-checkout"))
+    previous = create_finished_demo_incident(repository, session)
     manual = repository.create_incident(
         IncidentCreate(title="Manual incident", description="An operator reported it by hand.")
     )
@@ -184,9 +207,13 @@ def test_run_demo_closes_previous_demo_incidents_and_starts_runner(
 
 
 def test_second_run_closes_nothing_new(
-    operator_client: TestClient, enable_demo, fake_runner, repository: IncidentRepository
+    operator_client: TestClient,
+    enable_demo,
+    fake_runner,
+    repository: IncidentRepository,
+    session: Session,
 ) -> None:
-    repository.create_alarm_incident(alarm_data("if-checkout"))
+    create_finished_demo_incident(repository, session)
 
     first = operator_client.post("/api/demo/runs").json()
     second = operator_client.post("/api/demo/runs").json()
@@ -300,7 +327,7 @@ def test_manual_run_still_closes_incidents_under_investigation(
     repository: IncidentRepository,
     session: Session,
 ) -> None:
-    incident = repository.create_alarm_incident(alarm_data("if-checkout"))
+    incident = create_finished_demo_incident(repository, session)
     _investigate(session, incident.id, InvestigationLifecycle.RUNNING)
 
     response = operator_client.post("/api/demo/runs")
@@ -332,6 +359,40 @@ def test_manual_run_ignores_the_cooldown(
 
     assert response.status_code == 202
     assert len(fake_runner.run_ids) == 1
+
+
+def test_manual_run_is_refused_while_a_run_is_in_progress(
+    operator_client: TestClient,
+    enable_demo,
+    fake_runner,
+    repository: IncidentRepository,
+    session: Session,
+) -> None:
+    incident = repository.create_alarm_incident(alarm_data("if-checkout"))
+    set_created_at(session, incident.id, NOW - timedelta(seconds=5))
+
+    response = operator_client.post("/api/demo/runs")
+
+    assert response.status_code == 200
+    assert response.json()["started"] is False
+    assert fake_runner.run_ids == []
+    assert repository.get_incident(incident.id).status is IncidentStatus.OPEN
+
+
+def test_manual_run_starts_once_the_previous_run_has_finished(
+    operator_client: TestClient,
+    enable_demo,
+    fake_runner,
+    repository: IncidentRepository,
+    session: Session,
+) -> None:
+    incident = repository.create_alarm_incident(alarm_data("if-checkout"))
+    set_created_at(session, incident.id, NOW - timedelta(seconds=RUN_IN_PROGRESS_SECONDS + 1))
+
+    response = operator_client.post("/api/demo/runs")
+
+    assert response.status_code == 202
+    assert repository.get_incident(incident.id).status is IncidentStatus.CLOSED
 
 
 def test_lambda_runner_invokes_asynchronously() -> None:

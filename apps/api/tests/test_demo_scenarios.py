@@ -1,3 +1,5 @@
+import re
+
 from incidentflow.demo.scenarios import (
     DEMO_ALARM_NAMES,
     LEGACY_ALARM_NAMES,
@@ -37,3 +39,13 @@ def test_legacy_alarm_names_and_namespace_are_kept_for_cleanup() -> None:
     assert len(LEGACY_ALARM_NAMES) == 8
     assert METRIC_NAMESPACE == "IncidentFlow/Demo"
     assert SCENARIOS[0].log_group == "/incidentflow/demo/checkout-api"
+
+
+# CloudWatch rejects tag values outside this set (PutMetricAlarm / TagResource ValidationError).
+CLOUDWATCH_TAG_VALUE = re.compile(r"^[A-Za-z0-9 _.:/=+\-@]{0,256}$")
+
+
+def test_scenario_tag_values_are_accepted_by_cloudwatch() -> None:
+    for s in SCENARIOS:
+        for value in (s.title, s.service, s.priority.value):
+            assert CLOUDWATCH_TAG_VALUE.match(value), value

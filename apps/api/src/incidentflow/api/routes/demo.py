@@ -19,6 +19,8 @@ from incidentflow.infrastructure.database.investigation_repository import (
 )
 from incidentflow.infrastructure.database.session import SessionLocal
 
+RUN_IN_PROGRESS_INTERVALS = 3
+
 
 def get_demo_runner(background: BackgroundTasks) -> DemoRunner:
     settings = get_settings()
@@ -31,11 +33,14 @@ def get_demo_service(
     session: Annotated[Session, Depends(get_db_session)],
     runner: Annotated[DemoRunner, Depends(get_demo_runner)],
 ) -> DemoService:
+    settings = get_settings()
     return DemoService(
         IncidentRepository(session),
         runner,
-        get_settings().demo_auto_cooldown_seconds,
+        settings.demo_auto_cooldown_seconds,
         investigations=InvestigationRepository(session),
+        # A run fires one alarm per interval; allow two missed beats before calling it finished.
+        run_in_progress_seconds=settings.demo_interval_seconds * RUN_IN_PROGRESS_INTERVALS,
     )
 
 

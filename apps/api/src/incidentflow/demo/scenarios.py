@@ -45,7 +45,7 @@ SCENARIOS: tuple[Scenario, ...] = (
             ),
             "WARN checkout-api autoscaler at max_pods=12 connections_per_pod=20",
         ),
-        title="Checkout down during flash sale (checkout-api)",
+        title="Checkout down during flash sale - checkout-api",
         description=(
             "checkout-api returns HTTP 503 on POST /checkout for about 40% of customers since the "
             "flash sale started. Check the operational events and the runbook for connection pool "
@@ -70,7 +70,7 @@ SCENARIOS: tuple[Scenario, ...] = (
             ),
             "INFO order-service POST /orders status=201 write_ack=primary",
         ),
-        title="Customers report missing orders (order-service)",
+        title="Customers report missing orders - order-service",
         description=(
             "Customers say their confirmed orders are missing from their order history, but "
             "order-service dashboards look healthy. Check order-service operational events and "
@@ -94,7 +94,7 @@ SCENARIOS: tuple[Scenario, ...] = (
             ),
             "WARN auth-service login failed for customer reason=token_rejected",
         ),
-        title="Login failures after key rotation (auth-service)",
+        title="Login failures after key rotation - auth-service",
         description=(
             "Many customers cannot log in: auth-service returns HTTP 401 since this morning's "
             "JWT signing-key rotation. Check auth-service events, recent code changes, and the "
@@ -118,7 +118,7 @@ SCENARIOS: tuple[Scenario, ...] = (
             ),
             "ERROR inventory-service GET /stock status=502 upstream=pod_restarting",
         ),
-        title="inventory-service pods restarting (OOMKilled)",
+        title="inventory-service pods restarting - OOMKilled",
         description=(
             "inventory-service pods keep restarting with OOMKilled since release 2.4.1, and stock "
             "reads fail during restarts. Check inventory-service events for a memory leak. Create "
@@ -142,7 +142,7 @@ SCENARIOS: tuple[Scenario, ...] = (
             ),
             "WARN refund-service refund queued for retry idempotency_key=present",
         ),
-        title="Refund requests failing (refund-service)",
+        title="Refund requests failing - refund-service",
         description=(
             "refund-service rejects about 25% of POST /refunds with HTTP 502, so customers cannot "
             "get their money back. Check refund-service alarms, logs, operational events, recent "
@@ -172,7 +172,7 @@ SCENARIOS: tuple[Scenario, ...] = (
                 "in_use=20 max_pool_size=20 wait_queue=37"
             ),
         ),
-        title="payment-service HTTP 500 alarm (CloudWatch)",
+        title="payment-service HTTP 500 alarm - CloudWatch",
         description=(
             "The CloudWatch alarm for payment-service HTTP 5xx errors fired. Check production "
             "alarms, metrics, and logs, plus the payment-service operational events."
@@ -194,7 +194,7 @@ SCENARIOS: tuple[Scenario, ...] = (
                 "redis=replica-after-failover"
             ),
         ),
-        title="Slow search results (search-api)",
+        title="Slow search results - search-api",
         description=(
             "search-api answers slowly: p95 latency went from about 200 ms to more than 2 s. "
             "Check search-api events for the cause and say whether it is recovering."
@@ -217,7 +217,7 @@ SCENARIOS: tuple[Scenario, ...] = (
             ),
             "INFO notification-service email delivered delay_minutes=15 lost=0",
         ),
-        title="Delayed notification emails (notification-service)",
+        title="Delayed notification emails - notification-service",
         description=(
             "Order confirmation emails from notification-service arrive about 15 minutes late. "
             "Check notification-service events and confirm whether any email was lost."
