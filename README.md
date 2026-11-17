@@ -32,6 +32,7 @@ memory only after an operator confirms them.
   - [Enabling external integrations](#enabling-external-integrations)
 - [Configuration](#configuration)
 - [API overview](#api-overview)
+- [Incident history](#incident-history)
 - [Testing and quality](#testing-and-quality)
 - [Security design](#security-design)
 
@@ -339,6 +340,9 @@ Interactive OpenAPI documentation is available at `/docs` once the API is runnin
 | `GET`    | `/api/investigations` · `/api/investigations/{id}` | List or read investigations                  |
 | `POST`   | `/api/investigations/{id}/human-review/resolve`    | Approve, reject, or request more information |
 | `POST`   | `/api/investigations/{id}/memory-lessons`          | Confirm and index a lesson learned           |
+| `POST`   | `/api/incidents/{id}/resolve`                      | Mark an incident resolved                    |
+| `GET`    | `/api/history`                                     | Decision timeline, newest first (filters, paging) |
+| `GET`    | `/api/incidents/{id}/events`                       | One incident's journal, oldest first         |
 | `GET`    | `/health` · `/health/ready`                        | Liveness and readiness                       |
 | `GET`    | `/operations/metrics`                              | Aggregated request and lifecycle counters    |
 
@@ -359,6 +363,26 @@ curl -X POST http://127.0.0.1:8000/api/investigations \
 curl -X POST http://127.0.0.1:8000/api/investigations/<investigation-id>/human-review/resolve \
   -H "Content-Type: application/json" \
   -d '{"decision": "APPROVE", "actor": "on-call-engineer", "reason": "Evidence confirmed."}'
+```
+
+## Incident history
+
+The **History** tab shows a decision timeline across all incidents and the journal of the
+selected incident. Each step is stored in the `incident_events` table right after it happens,
+with its time and author: incident created (manual or CloudWatch alarm), investigation started,
+paused for review, review approved or rejected, report written (confidence, Jira key) or failed,
+incident resolved or closed by a demo run, lesson saved, and demo run started. A refused
+action records nothing.
+
+Data created before the history existed can be reconstructed once; rows are marked
+"reconstructed" (shown with `≈`) because their times are approximate. Running it again inserts
+nothing:
+
+```bash
+# Docker Compose (scripts/ is not in the image, so pipe it in)
+docker exec -i incidentflow-api-1 python - < apps/api/scripts/backfill_incident_events.py
+# or, on the host from apps/api with DATABASE_URL set
+python scripts/backfill_incident_events.py
 ```
 
 ## Testing and quality
