@@ -4,11 +4,19 @@ The model tends to report 95-100% even on thin evidence, so the stored confidenc
 how well the causal chain is supported and the reason is added to the report's limitations.
 """
 
+import re
+
 from incidentflow.agent.findings import InvestigationReport
 
 SYNTHETIC_CAP = 0.7
 HYPOTHESIS_CAP = 0.8
 SINGLE_SOURCE_CAP = 0.9
+
+
+def _specialists(source: str) -> set[str]:
+    """Split "ask_github, cloudwatch" into {"github", "cloudwatch"}."""
+    parts = re.split(r"[,;&+]|\band\b", source.casefold())
+    return {part.strip().removeprefix("ask_") for part in parts if part.strip()}
 
 
 def _ceiling(report: InvestigationReport) -> tuple[float, str] | None:
@@ -21,9 +29,10 @@ def _ceiling(report: InvestigationReport) -> tuple[float, str] | None:
     unavailable = any(item.source_status == "unavailable" for item in report.evidence)
     if unavailable or any(not step.verified for step in report.causal_chain):
         return HYPOTHESIS_CAP, "part of the chain is a hypothesis or a source was unavailable"
-    sources = {step.source for step in report.causal_chain} or {
+    cited = [step.source for step in report.causal_chain] or [
         item.source for item in report.evidence
-    }
+    ]
+    sources = set().union(*(_specialists(source) for source in cited))
     if len(sources) < 2:
         return SINGLE_SOURCE_CAP, "the causal chain rests on one source"
     return None

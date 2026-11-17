@@ -29,6 +29,9 @@ export function sourceKey(source: string) {
 
 export const sourceName = (source: string) => SOURCE_NAMES[sourceKey(source)] ?? source
 
+/** A step may cite several specialists at once: "ask_data_intelligence, ask_cloudwatch". */
+export const stepSources = (source: string) => source.split(/[,;&+]|\band\b/).map((part) => part.trim()).filter(Boolean)
+
 const VISIBLE_ACTIONS = 3
 
 function ConfidenceMeter({ value }: { value: number }) {
@@ -47,7 +50,9 @@ function ConfidenceMeter({ value }: { value: number }) {
 function CausalChain({ steps, evidence }: { steps: CausalStep[], evidence: InvestigationEvidence[] }) {
   const [selected, setSelected] = useState(0)
   const step = steps[Math.min(selected, steps.length - 1)]
-  const supporting = evidence.filter((item) => sourceKey(item.source) === sourceKey(step.source))
+  const keys = new Set(stepSources(step.source).map(sourceKey))
+  const names = stepSources(step.source).map(sourceName)
+  const supporting = evidence.filter((item) => keys.has(sourceKey(item.source)))
 
   return (
     <section aria-label="Causal chain" className="causal-chain">
@@ -58,14 +63,14 @@ function CausalChain({ steps, evidence }: { steps: CausalStep[], evidence: Inves
             <button aria-pressed={index === selected} onClick={() => setSelected(index)} type="button">
               <small>{index === 0 ? 'Origin' : index === steps.length - 1 ? 'Symptom' : `Step ${index + 1}`}</small>
               <strong>{item.label}</strong>
-              <span>{sourceName(item.source)}{item.verified ? '' : ' · hypothesis'}</span>
+              <span>{stepSources(item.source).map(sourceName).join(' + ')}{item.verified ? '' : ' · hypothesis'}</span>
             </button>
           </li>
         ))}
       </ol>
       <div aria-label="Selected step" aria-live="polite" className="causal-detail" role="region">
         <p>{step.detail}</p>
-        <small>{step.verified ? 'Observed by' : 'Suggested by'} {sourceName(step.source)}{step.verified ? '' : ' (not confirmed by evidence)'}</small>
+        <small>{step.verified ? 'Observed by' : 'Suggested by'} {names.join(' and ')}{step.verified ? '' : ' (not confirmed by evidence)'}</small>
         {supporting.length > 0 && (
           <ul>{supporting.map((item, index) => <li key={index}>{item.detail}</li>)}</ul>
         )}

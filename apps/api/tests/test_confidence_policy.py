@@ -77,3 +77,35 @@ def test_the_cap_is_applied_when_the_supervisor_report_is_captured() -> None:
     captured = capture_supervisor_report({"structured_response": raw})
 
     assert captured["report"].confidence == 0.9
+
+
+def test_a_step_citing_two_specialists_counts_as_two_sources() -> None:
+    original = report(
+        0.95,
+        [step("ask_data_intelligence, ask_cloudwatch"), step("ask_data_intelligence")],
+        [evidence("ask_data_intelligence"), evidence("ask_cloudwatch")],
+    )
+
+    assert cap_confidence(original) == original
+
+
+def test_two_spellings_of_one_specialist_still_count_as_one_source() -> None:
+    capped = cap_confidence(
+        report(
+            0.95,
+            [step("ask_cloudwatch"), step("cloudwatch")],
+            [evidence("ask_cloudwatch")],
+        )
+    )
+
+    assert capped.confidence == 0.9
+
+
+def test_specialists_joined_with_and_count_separately() -> None:
+    original = report(
+        0.95,
+        [step("ask_github and ask_cloudwatch")],
+        [evidence("ask_github"), evidence("ask_cloudwatch")],
+    )
+
+    assert cap_confidence(original) == original

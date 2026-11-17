@@ -2,7 +2,7 @@ import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { InvestigationReport } from '../../api'
-import { ReportDetails, sourceName } from './ReportDetails'
+import { ReportDetails, sourceName, stepSources } from './ReportDetails'
 
 const report: InvestigationReport = {
   summary: 'checkout-api returns HTTP 503 for 40% of customers.',
@@ -69,10 +69,23 @@ describe('ReportDetails', () => {
     expect(screen.getByRole('region', { name: 'What to do next' })).toHaveTextContent('proposed no action')
   })
 
+  it('shows the evidence of every source a step cites', async () => {
+    const twoSources = { ...report, causal_chain: [{ label: 'Replica lag', detail: 'Lag rose to 340 s.', source: 'ask_data_intelligence, ask_cloudwatch', verified: true }] }
+    render(<ReportDetails report={twoSources} />)
+
+    const selected = screen.getByRole('region', { name: 'Selected step' })
+    expect(screen.getByRole('button', { name: /Replica lag/ })).toHaveTextContent('MongoDB events + CloudWatch')
+    expect(selected).toHaveTextContent('Observed by MongoDB events and CloudWatch')
+    expect(selected).toHaveTextContent('PoolTimeoutError waited 5000 ms.')
+    expect(selected).toHaveTextContent('rps 400 -> 2100.')
+  })
+
   it('names each source the same way whatever the agent called it', () => {
     expect(sourceName('ask_cloudwatch')).toBe('CloudWatch')
     expect(sourceName('CloudWatch Observability Agent')).toBe('CloudWatch')
     expect(sourceName('data_intelligence')).toBe('MongoDB events')
+    expect(stepSources('ask_github and ask_cloudwatch')).toEqual(['ask_github', 'ask_cloudwatch'])
+    expect(stepSources('knowledge_base')).toEqual(['knowledge_base'])
     expect(sourceName('operational_events collection in incidentflow_dev database')).toBe('MongoDB events')
     expect(sourceName('GitHub YanivBohbot/incidentflow repository')).toBe('GitHub')
     expect(sourceName('checkout-api connection pool runbook')).toBe('Knowledge base')
