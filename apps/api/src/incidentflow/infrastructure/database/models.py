@@ -167,3 +167,25 @@ class IncidentLessonORM(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
     )
+
+
+class IncidentEventORM(Base):
+    __tablename__ = "incident_events"
+    __table_args__ = (Index("ix_incident_events_incident_time", "incident_id", "occurred_at"),)
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    incident_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("incidents.id", ondelete="CASCADE"), nullable=True
+    )
+    investigation_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("investigations.id", ondelete="SET NULL"), nullable=True
+    )
+    kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, index=True
+    )
+    actor: Mapped[str] = mapped_column(String(200), nullable=False)
+    summary: Mapped[str] = mapped_column(String(300), nullable=False)
+    details: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    reconstructed: Mapped[bool] = mapped_column(nullable=False, default=False)
+
