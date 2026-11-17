@@ -159,6 +159,9 @@ class InvestigationService:
             details["review_type"] = review.review_type.value
         if tool_name:
             details["tool_name"] = tool_name
+        arguments = (review.draft or {}).get("arguments") or (review.draft or {}).get("tool_args")
+        if isinstance(arguments, dict) and arguments.get("projectKey"):
+            details["project_key"] = str(arguments["projectKey"])
         self.events.record(
             IncidentEventKind.REVIEW_DECIDED,
             incident_id=investigation.incident_id,

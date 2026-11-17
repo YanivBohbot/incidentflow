@@ -137,10 +137,43 @@ def test_second_backfill_inserts_nothing(session) -> None:
     assert backfill(session, trace_reader=no_trace) == 0
 
 
-def test_backfill_skips_incidents_that_already_have_events(session) -> None:
-    incident, _ = seed(session)
+def test_backfill_keeps_live_events_and_fills_what_is_missing(session) -> None:
+    incident, investigation = seed(session)
     events = IncidentEventRepository(session)
     events.record(IncidentEventKind.INCIDENT_CREATED, incident_id=incident.id, summary="Live")
+    events.record(
+        IncidentEventKind.INCIDENT_RESOLVED, incident_id=incident.id, summary="Live", actor="alice"
+    )
 
-    assert backfill(session, trace_reader=no_trace) == 0
-    assert len(events.list_for_incident(incident.id)) == 1
+    backfill(session, trace_reader=no_trace)
+
+    journal = events.list_for_incident(incident.id)
+    created = [item for item in journal if item.kind is IncidentEventKind.INCIDENT_CREATED]
+    resolved = [item for item in journal if item.kind is IncidentEventKind.INCIDENT_RESOLVED]
+    assert [item.reconstructed for item in created] == [False]
+    assert [item.actor for item in resolved] == ["alice"]
+    assert {item.kind for item in journal if item.investigation_id == investigation.id} == {
+        IncidentEventKind.INVESTIGATION_STARTED,
+        IncidentEventKind.INVESTIGATION_COMPLETED,
+        IncidentEventKind.LESSON_SAVED,
+    }
+
+
+def test_backfill_skips_an_investigation_that_already_has_live_events(session) -> None:
+    incident, investigation = seed(session)
+    events = IncidentEventRepository(session)
+    events.record(
+        IncidentEventKind.INVESTIGATION_STARTED,
+        incident_id=incident.id,
+        investigation_id=investigation.id,
+        summary="Live",
+    )
+
+    backfill(session, trace_reader=no_trace)
+
+    starts = [
+        item
+        for item in events.list_for_incident(incident.id)
+        if item.kind is IncidentEventKind.INVESTIGATION_STARTED
+    ]
+    assert [item.reconstructed for item in starts] == [False]

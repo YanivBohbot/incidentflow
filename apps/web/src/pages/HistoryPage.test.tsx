@@ -80,6 +80,32 @@ describe('HistoryPage', () => {
     expect(getHistory).toHaveBeenLastCalledWith({ incidentId: undefined, kinds: undefined, before: 'cursor-1' })
   })
 
+  it('the periodic refresh keeps the older pages already loaded', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const older = event({ id: 'e0', summary: 'Older event', occurred_at: '2026-11-16T09:00:00Z' })
+    const newest = event({ id: 'e4', summary: 'Newest event', occurred_at: '2026-11-17T13:00:00Z' })
+    const getHistory = vi.spyOn(api, 'getHistory')
+      .mockResolvedValueOnce({ events: history, next_before: 'cursor-1' })
+      .mockResolvedValueOnce({ events: [older], next_before: null })
+      .mockResolvedValue({ events: [newest, ...history], next_before: 'cursor-1' })
+    vi.spyOn(api, 'getIncidentEvents').mockResolvedValue([])
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<HistoryPage incidents={[incident]} onOpenInvestigation={vi.fn()} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Load more' }))
+    await screen.findByText('Older event')
+    await vi.advanceTimersByTimeAsync(10_000)
+    await screen.findByText('Newest event')
+
+    const rows = within(screen.getByRole('list', { name: 'Chronology' })).getAllByRole('listitem')
+    expect(rows.map((row) => row.querySelector('strong')?.textContent)).toEqual([
+      'Newest event', 'Marked resolved by alice', 'Jira write approved by alice', 'Incident created', 'Older event',
+    ])
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
+    expect(getHistory).toHaveBeenCalledTimes(3)
+    vi.useRealTimers()
+  })
+
   it('open investigation calls onOpenInvestigation from the journal', async () => {
     mockApi()
     const onOpenInvestigation = vi.fn()

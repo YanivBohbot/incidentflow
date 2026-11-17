@@ -84,21 +84,57 @@ def test_completion_records_one_event_with_confidence(session, events) -> None:
     assert "jira_key" not in event.details
 
 
-def test_completion_after_approved_jira_write_carries_the_issue_key(session, events) -> None:
-    repository, claimed = claimed_investigation(session)
+def approve_jira_write(events, claimed, project_key: str = "SAM1") -> None:
     events.record(
         IncidentEventKind.REVIEW_DECIDED,
         incident_id=claimed.investigation.incident_id,
         investigation_id=claimed.investigation.id,
         actor="alice",
         summary="Jira write approved by alice",
-        details={"decision": "APPROVE", "tool_name": "createJiraIssue"},
+        details={"decision": "APPROVE", "tool_name": "createJiraIssue", "project_key": project_key},
     )
+
+
+def jira_evidence(detail: str) -> InvestigationReport:
+    return report(
+        evidence=[
+            InvestigationEvidence(source="ask_it_operations", detail=detail, source_status="live")
+        ]
+    )
+
+
+def completed_key(events) -> str | None:
+    done = events.list_history(kinds=[IncidentEventKind.INVESTIGATION_COMPLETED]).events[0]
+    return done.details.get("jira_key")
+
+
+def test_completion_after_approved_jira_write_carries_the_issue_key(session, events) -> None:
+    repository, claimed = claimed_investigation(session)
+    approve_jira_write(events, claimed)
 
     persist_workflow_result(repository, claimed, completed(), events=events)
 
-    done = events.list_history(kinds=[IncidentEventKind.INVESTIGATION_COMPLETED]).events[0]
-    assert done.details["jira_key"] == "SAM1-25"
+    assert completed_key(events) == "SAM1-25"
+
+
+def test_jira_key_prefers_the_created_issue_of_the_approved_project(session, events) -> None:
+    repository, claimed = claimed_investigation(session)
+    approve_jira_write(events, claimed)
+    found = jira_evidence("Related to SAM1-12 and HTTP-500 spikes; created SAM1-57 for on-call.")
+
+    persist_workflow_result(repository, claimed, completed(found), events=events)
+
+    assert completed_key(events) == "SAM1-57"
+
+
+def test_jira_key_ignores_keys_of_other_projects(session, events) -> None:
+    repository, claimed = claimed_investigation(session)
+    approve_jira_write(events, claimed)
+    found = jira_evidence("HTTP-500 spikes; see OPS-4 for the earlier outage.")
+
+    persist_workflow_result(repository, claimed, completed(found), events=events)
+
+    assert completed_key(events) is None
 
 
 def test_pause_records_review_requested(session, events) -> None:

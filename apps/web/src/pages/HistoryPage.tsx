@@ -1,5 +1,5 @@
 /** History page: the decision timeline on the left, the selected incident's journal on the right. */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import type { Incident, IncidentEvent, IncidentEventKind } from '../api'
 import { EmptyState } from '../components/ui/EmptyState'
@@ -55,12 +55,23 @@ export function HistoryPage({ incidents, initialIncidentId, onOpenInvestigation 
 
   const kinds = decisionsOnly ? DECISION_KINDS : undefined
 
-  /** Reload the first page for the current filters. */
-  const loadFirstPage = useCallback(async () => {
+  /** True once "Load more" has added older pages, so a refresh must not drop them. */
+  const paged = useRef(false)
+
+  /** Fetch the first page: a reset replaces the list, a refresh only adds new events on top. */
+  const loadFirstPage = useCallback(async (mode: 'reset' | 'refresh') => {
     try {
       const page = await api.getHistory({ incidentId: incidentFilter, kinds, before: undefined })
-      setEvents(page.events)
-      setNextBefore(page.next_before)
+      if (mode === 'reset' || !paged.current) {
+        paged.current = false
+        setEvents(page.events)
+        setNextBefore(page.next_before)
+      } else {
+        setEvents((current) => {
+          const known = new Set(current.map((item) => item.id))
+          return [...page.events.filter((item) => !known.has(item.id)), ...current]
+        })
+      }
       setError(null)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not load the history.')
@@ -68,9 +79,9 @@ export function HistoryPage({ incidents, initialIncidentId, onOpenInvestigation 
   }, [incidentFilter, kinds])
 
   useEffect(() => {
-    void loadFirstPage()
+    void loadFirstPage('reset')
     const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void loadFirstPage()
+      if (document.visibilityState === 'visible') void loadFirstPage('refresh')
     }, REFRESH_MS)
     return () => window.clearInterval(timer)
   }, [loadFirstPage])
@@ -87,6 +98,7 @@ export function HistoryPage({ incidents, initialIncidentId, onOpenInvestigation 
   async function loadMore() {
     if (!nextBefore) return
     const page = await api.getHistory({ incidentId: incidentFilter, kinds, before: nextBefore })
+    paged.current = true
     setEvents((current) => [...current, ...page.events])
     setNextBefore(page.next_before)
   }

@@ -56,9 +56,14 @@ class _Writer:
             occurred_at=_utc(when),
             summary=summary,
             reconstructed=True,
+            commit=False,
             **fields,
         )
         self.count += 1
+
+    def commit(self) -> None:
+        """Write one unit (an incident row, an investigation, a lesson) all at once."""
+        self.events.session.commit()
 
 
 def _investigation_events(
@@ -119,27 +124,37 @@ def _investigation_events(
         )
 
 
+END_KINDS = (IncidentEventKind.INCIDENT_RESOLVED, IncidentEventKind.INCIDENT_CLOSED)
+
+
 def backfill(session: Session, *, trace_reader: TraceReader) -> int:
-    """Reconstruct the journal of every incident that has no event yet; return rows written."""
+    """Reconstruct whatever has no event yet; return rows written.
+
+    Decided per unit (incident creation, each investigation, each lesson, the resolution),
+    so live events written before the backfill are kept and never duplicated, and each unit
+    is committed whole, so an interrupted run resumes cleanly.
+    """
     events = IncidentEventRepository(session)
     total = 0
     for incident in session.scalars(select(IncidentORM).order_by(IncidentORM.created_at)).all():
-        if events.has_events_for_incident(incident.id):
-            continue
         writer = _Writer(events, incident.id)
-        writer.add(
-            IncidentEventKind.INCIDENT_CREATED,
-            incident.created_at,
-            "Incident created",
-            details={"source": incident.source.value},
-        )
+        if not events.has_incident_event(incident.id, [IncidentEventKind.INCIDENT_CREATED]):
+            writer.add(
+                IncidentEventKind.INCIDENT_CREATED,
+                incident.created_at,
+                "Incident created",
+                details={"source": incident.source.value},
+            )
+            writer.commit()
         investigations = session.scalars(
             select(InvestigationORM)
             .where(InvestigationORM.incident_id == incident.id)
             .order_by(InvestigationORM.created_at)
         ).all()
         for investigation in investigations:
-            _investigation_events(writer, investigation, trace_reader)
+            if not events.has_events_for_investigation(investigation.id):
+                _investigation_events(writer, investigation, trace_reader)
+                writer.commit()
         lessons = session.scalars(
             select(IncidentLessonORM).where(
                 IncidentLessonORM.investigation_id.in_([item.id for item in investigations]),
@@ -147,6 +162,8 @@ def backfill(session: Session, *, trace_reader: TraceReader) -> int:
             )
         ).all()
         for lesson in lessons:
+            if events.has_event(lesson.investigation_id, IncidentEventKind.LESSON_SAVED):
+                continue
             writer.add(
                 IncidentEventKind.LESSON_SAVED,
                 lesson.confirmed_at or lesson.created_at,
@@ -154,7 +171,9 @@ def backfill(session: Session, *, trace_reader: TraceReader) -> int:
                 investigation_id=lesson.investigation_id,
                 details={"service": lesson.service},
             )
-        if incident.status in (IncidentStatus.RESOLVED, IncidentStatus.CLOSED):
+            writer.commit()
+        ended = incident.status in (IncidentStatus.RESOLVED, IncidentStatus.CLOSED)
+        if ended and not events.has_incident_event(incident.id, END_KINDS):
             resolved = incident.status is IncidentStatus.RESOLVED
             writer.add(
                 IncidentEventKind.INCIDENT_RESOLVED
@@ -164,5 +183,6 @@ def backfill(session: Session, *, trace_reader: TraceReader) -> int:
                 "Incident resolved" if resolved else "Incident closed",
                 actor="unknown",
             )
+            writer.commit()
         total += writer.count
     return total

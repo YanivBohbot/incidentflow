@@ -46,8 +46,9 @@ class IncidentEventRepository:
         details: dict[str, Any] | None = None,
         occurred_at: datetime | None = None,
         reconstructed: bool = False,
+        commit: bool = True,
     ) -> IncidentEvent:
-        """Append one event and commit it."""
+        """Append one event and commit it; with commit=False the caller commits a batch."""
         orm = IncidentEventORM(
             kind=kind.value,
             incident_id=incident_id,
@@ -60,9 +61,26 @@ class IncidentEventRepository:
         if occurred_at is not None:
             orm.occurred_at = _utc(occurred_at)
         self.session.add(orm)
-        self.session.commit()
-        self.session.refresh(orm)
+        if commit:
+            self.session.commit()
+            self.session.refresh(orm)
+        else:
+            self.session.flush()
         return self._to_domain(orm)
+
+    def has_incident_event(self, incident_id: UUID, kinds: Iterable[IncidentEventKind]) -> bool:
+        """Whether the incident already has an event of one of these kinds."""
+        statement = select(IncidentEventORM.id).where(
+            IncidentEventORM.incident_id == incident_id,
+            IncidentEventORM.kind.in_([kind.value for kind in kinds]),
+        )
+        return self.session.scalars(statement.limit(1)).first() is not None
+
+    def has_events_for_investigation(self, investigation_id: UUID) -> bool:
+        statement = select(IncidentEventORM.id).where(
+            IncidentEventORM.investigation_id == investigation_id
+        )
+        return self.session.scalars(statement.limit(1)).first() is not None
 
     def list_history(
         self,
@@ -114,16 +132,26 @@ class IncidentEventRepository:
         statement = select(IncidentEventORM.id).where(IncidentEventORM.incident_id == incident_id)
         return self.session.scalars(statement.limit(1)).first() is not None
 
+    def find_event(
+        self, investigation_id: UUID, kind: IncidentEventKind, **details: Any
+    ) -> IncidentEvent | None:
+        """The latest event of this kind for the investigation whose details match."""
+        statement = (
+            select(IncidentEventORM)
+            .where(
+                IncidentEventORM.investigation_id == investigation_id,
+                IncidentEventORM.kind == kind.value,
+            )
+            .order_by(IncidentEventORM.occurred_at.desc(), IncidentEventORM.id.desc())
+        )
+        for orm in self.session.scalars(statement):
+            if all(orm.details.get(key) == value for key, value in details.items()):
+                return self._to_domain(orm)
+        return None
+
     def has_event(self, investigation_id: UUID, kind: IncidentEventKind, **details: Any) -> bool:
         """Whether this investigation already has an event of this kind with these details."""
-        statement = select(IncidentEventORM).where(
-            IncidentEventORM.investigation_id == investigation_id,
-            IncidentEventORM.kind == kind.value,
-        )
-        return any(
-            all(orm.details.get(key) == value for key, value in details.items())
-            for orm in self.session.scalars(statement)
-        )
+        return self.find_event(investigation_id, kind, **details) is not None
 
     @staticmethod
     def _to_domain(orm: IncidentEventORM, title: str | None = None) -> IncidentEvent:

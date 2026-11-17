@@ -60,25 +60,36 @@ class LeaseLostError(RuntimeError):
     """A fenced write matched no row: another worker now owns the investigation."""
 
 
-JIRA_KEY = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
+CREATED_NEARBY = 40
 
 
 def _jira_key(events: IncidentEventRepository, investigation_id: UUID, report: Any) -> str | None:
-    """The Jira issue an approved write created, as reported by the Jira specialist."""
-    if not events.has_event(
+    """The Jira issue an approved write created, as reported by the Jira specialist.
+
+    Only keys of the approved write's project count, so "HTTP-500" or an older issue of another
+    project is never recorded; a key right after "created" wins over other mentions.
+    """
+    approval = events.find_event(
         investigation_id,
         IncidentEventKind.REVIEW_DECIDED,
         decision="APPROVE",
         tool_name="createJiraIssue",
-    ):
+    )
+    project = (approval.details.get("project_key") if approval else None) or ""
+    if not project:
         return None
+    pattern = re.compile(rf"\b{re.escape(project)}-\d+\b")
+    candidates: list[str] = []
     for item in report.evidence:
         source = item.source.casefold()
-        if "it_operations" in source or "jira" in source:
-            match = JIRA_KEY.search(item.detail)
-            if match:
+        if "it_operations" not in source and "jira" not in source:
+            continue
+        for match in pattern.finditer(item.detail):
+            before = item.detail[max(0, match.start() - CREATED_NEARBY) : match.start()]
+            if "creat" in before.casefold():
                 return match.group(0)
-    return None
+            candidates.append(match.group(0))
+    return candidates[-1] if candidates else None
 
 
 def record_outcome_event(

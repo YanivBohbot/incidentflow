@@ -288,3 +288,33 @@ def test_confirmed_lesson_records_event_and_failed_index_does_not(session, event
         assert [item.kind for item in saved] == [IncidentEventKind.LESSON_SAVED]
         assert saved[0].investigation_id == investigation.id
         assert saved[0].actor == "alice"
+
+
+def test_review_decision_records_the_jira_project_key(session, events) -> None:
+    incident = manual_incident(session)
+    investigation = InvestigationRepository(session).create_investigation(
+        InvestigationCreate(
+            incident_id=incident.id,
+            incident_request="Investigate checkout.",
+            incident_business_status="OPEN",
+        )
+    )
+    orm = session.get(InvestigationORM, investigation.id)
+    orm.lifecycle = InvestigationLifecycle.AWAITING_HUMAN_REVIEW
+    orm.pending_human_review_payload = HumanReview(
+        review_type=HumanReviewType.JIRA_WRITE,
+        reason="Create the tracking issue.",
+        draft={
+            "tool_name": "createJiraIssue",
+            "arguments": {"projectKey": "SAM1", "summary": "Checkout down"},
+            "editable_fields": ["summary"],
+        },
+    ).model_dump(mode="json")
+    session.commit()
+
+    investigation_service(session, events).request_human_review_resume(
+        investigation.id, HumanReviewDecision(decision="APPROVE", actor="alice")
+    )
+
+    [decided] = events.list_for_incident(incident.id)
+    assert decided.details["project_key"] == "SAM1"
