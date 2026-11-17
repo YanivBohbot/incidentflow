@@ -29,11 +29,13 @@ WORKDIR /build
 RUN python -m venv /opt/cloudwatch-mcp \
     && /opt/cloudwatch-mcp/bin/pip install awslabs.cloudwatch-mcp-server==0.3.1
 
-# Install application dependencies before copying migration files to keep the
-# dependency layer reusable across source-only changes.
+# Dependencies come from pyproject.toml alone, so this slow layer is reused until they change;
+# a source-only change rebuilds just the quick --no-deps install below.
 COPY pyproject.toml ./
+RUN python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml', 'rb'))['project']['dependencies']))" > requirements.txt \
+    && python -m pip install --prefix=/install -r requirements.txt
 COPY src ./src
-RUN python -m pip install --prefix=/install .
+RUN python -m pip install --prefix=/install --no-deps .
 
 FROM python:3.12-slim AS jobs
 

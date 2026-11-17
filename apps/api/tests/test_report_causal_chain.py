@@ -61,3 +61,8 @@ def test_supervisor_lowers_confidence_for_hypotheses_and_synthetic_data() -> Non
     assert "Lower confidence" in SUPERVISOR_SYSTEM_PROMPT
     assert "synthetic" in SUPERVISOR_SYSTEM_PROMPT
     assert "never above 0.7" in SUPERVISOR_SYSTEM_PROMPT
+
+
+def test_supervisor_always_proposes_next_actions() -> None:
+    assert "two to four proposed_actions" in SUPERVISOR_SYSTEM_PROMPT
+    assert "even when a Jira issue" in SUPERVISOR_SYSTEM_PROMPT

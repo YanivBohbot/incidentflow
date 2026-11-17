@@ -18,6 +18,8 @@ SUPERVISOR_SYSTEM_PROMPT = (
     "Set agents_consulted only to the technical names of specialists actually consulted, not the "
     "delegation tool names. "
     "Keep evidence, hypotheses, and proposed actions separate. "
+    "Always give two to four proposed_actions: concrete next steps the operator should take to "
+    "fix or contain the problem, even when a Jira issue already tracks it or was just created. "
     "Set root_cause to one sentence naming the most likely origin of the problem, and "
     "causal_chain to two to six ordered steps from the earliest cause to the customer-visible "
     "symptom. Give each step a short label, a one-sentence detail with the concrete figure, the "

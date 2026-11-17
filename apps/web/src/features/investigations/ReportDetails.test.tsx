@@ -63,6 +63,12 @@ describe('ReportDetails', () => {
     expect(screen.queryByRole('region', { name: 'Causal chain' })).toBeNull()
   })
 
+  it('keeps the next-actions box visible when no action was proposed', () => {
+    render(<ReportDetails report={{ ...report, proposed_actions: [] }} />)
+
+    expect(screen.getByRole('region', { name: 'What to do next' })).toHaveTextContent('proposed no action')
+  })
+
   it('names each source the same way whatever the agent called it', () => {
     expect(sourceName('ask_cloudwatch')).toBe('CloudWatch')
     expect(sourceName('CloudWatch Observability Agent')).toBe('CloudWatch')

@@ -105,17 +105,17 @@ export function ReportDetails({ report }: { report: InvestigationReport }) {
 
       {chain.length > 0 && <CausalChain evidence={evidence} steps={chain} />}
 
-      {actions.length > 0 && (
-        <section aria-label="What to do next" className="report-actions">
-          <h3><span aria-hidden="true">✅</span> What to do next</h3>
+      <section aria-label="What to do next" className="report-actions">
+        <h3><span aria-hidden="true">✅</span> What to do next</h3>
+        {actions.length === 0 ? <p>The agents proposed no action for this incident. Check the evidence below before acting.</p> : <>
           <ol>{shownActions.map((item, index) => <li key={index}>{item}</li>)}</ol>
           {actions.length > VISIBLE_ACTIONS && (
             <button className="quiet-button" onClick={() => setShowAllActions((value) => !value)} type="button">
               {showAllActions ? 'Show fewer' : `Show all ${actions.length} actions`}
             </button>
           )}
-        </section>
-      )}
+        </>}
+      </section>
 
       <div className="report-more">
         {report.root_cause && (

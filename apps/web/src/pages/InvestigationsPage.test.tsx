@@ -32,4 +32,15 @@ describe('InvestigationsPage resolve banner', () => {
     expect(screen.queryByRole('button', { name: 'Mark incident resolved' })).toBeNull()
     expect(screen.getByText('Incident resolved.')).toBeInTheDocument()
   })
+
+  it('hides the lesson form until the incident is resolved', async () => {
+    renderPage('OPEN')
+    expect(screen.queryByRole('region', { name: 'Confirm incident lesson for memory' })).toBeNull()
+    cleanup()
+
+    renderPage('RESOLVED')
+    expect(screen.queryByRole('region', { name: 'Confirm incident lesson for memory' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Save what fixed it as a lesson' }))
+    expect(screen.getByRole('region', { name: 'Confirm incident lesson for memory' })).toBeInTheDocument()
+  })
 })
