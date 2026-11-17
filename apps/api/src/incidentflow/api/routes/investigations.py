@@ -22,6 +22,9 @@ from incidentflow.domain.investigations.models import (
     InvestigationTraceStep,
 )
 from incidentflow.domain.memory.models import IncidentLesson, IncidentLessonConfirmation
+from incidentflow.infrastructure.database.incident_event_repository import (
+    IncidentEventRepository,
+)
 from incidentflow.infrastructure.database.incident_lesson_repository import IncidentLessonRepository
 from incidentflow.infrastructure.database.incident_repository import IncidentRepository
 from incidentflow.infrastructure.database.investigation_repository import InvestigationRepository
@@ -53,6 +56,7 @@ def get_investigation_service(
         IncidentRepository(session),
         queue,
         request.app.state.investigation_workflow,
+        events=IncidentEventRepository(session),
     )
 
 
@@ -69,6 +73,7 @@ def get_incident_lesson_service(
     return IncidentLessonService(
         IncidentLessonRepository(session),
         ResolvedIncidentStore.from_settings(settings),
+        events=IncidentEventRepository(session),
     )
 
 
@@ -94,11 +99,11 @@ def list_investigations(service: InvestigationServiceDep) -> list[Investigation]
     dependencies=CAN_OPERATE,
 )
 def start_investigation(
-    data: InvestigationStart, service: InvestigationServiceDep
+    data: InvestigationStart, service: InvestigationServiceDep, principal: OperatorPrincipal
 ) -> Investigation:
     """Queue an investigation for an existing incident and return its PENDING record."""
     try:
-        investigation = service.start_investigation(data)
+        investigation = service.start_investigation(data, actor=principal.username)
     except InvestigationAlreadyActiveError as error:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -179,6 +184,7 @@ def confirm_incident_lesson(
     data: IncidentLessonConfirmation,
     investigation_service: InvestigationServiceDep,
     lesson_service: IncidentLessonServiceDep,
+    principal: OperatorPrincipal,
 ) -> IncidentLesson:
     """Index an operator-reviewed lesson after its source investigation is complete."""
     if data.investigation_id != investigation_id:
@@ -189,6 +195,6 @@ def confirm_incident_lesson(
     if investigation_service.get_investigation(investigation_id) is None:
         raise HTTPException(status_code=404, detail="Investigation not found")
     try:
-        return lesson_service.confirm_and_index(data)
+        return lesson_service.confirm_and_index(data, actor=principal.username)
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error

@@ -41,6 +41,9 @@ from incidentflow.application.services.incident_ingestion_service import (
 from incidentflow.core.config import Settings, get_settings
 from incidentflow.core.ssm import SSM_PATH_ENV, load_ssm_secrets_if_configured
 from incidentflow.demo.simulator import DemoSimulator
+from incidentflow.infrastructure.database.incident_event_repository import (
+    IncidentEventRepository,
+)
 from incidentflow.infrastructure.database.incident_repository import IncidentRepository
 from incidentflow.infrastructure.database.session import get_session_factory
 from incidentflow.infrastructure.queue.sqs import build_job_queue
@@ -260,6 +263,7 @@ def ingest_handler(event: dict[str, Any], context: Any) -> dict[str, str]:
             IncidentRepository(session),
             alarm_tag_reader_factory(),
             settings.ingest_alarm_prefix,
+            events=IncidentEventRepository(session),
         )
         result = service.ingest_cloudwatch_alarm(event)
     return {"outcome": result.outcome.name}

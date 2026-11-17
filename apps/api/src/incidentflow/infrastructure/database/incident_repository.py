@@ -83,9 +83,12 @@ class IncidentRepository:
         return self.to_domain(orm)
 
     def close_open_alarm_incidents(self, alarm_names: Sequence[str]) -> int:
-        """Close the open incidents of the given alarms."""
+        return len(self.close_open_alarm_incident_ids(alarm_names))
+
+    def close_open_alarm_incident_ids(self, alarm_names: Sequence[str]) -> list[UUID]:
+        """Close the open incidents of the given alarms and return their ids."""
         if not alarm_names:
-            return 0
+            return []
 
         statement = select(IncidentORM).where(
             IncidentORM.source == IncidentSource.CLOUDWATCH_ALARM,
@@ -93,11 +96,11 @@ class IncidentRepository:
             IncidentORM.external_id.is_not(None),
         )
         suffixes = tuple(f":alarm:{name}" for name in alarm_names)
-        closed = 0
+        closed: list[UUID] = []
         for orm in self.session.scalars(statement):
             if orm.external_id is not None and orm.external_id.endswith(suffixes):
                 orm.status = IncidentStatus.CLOSED
-                closed += 1
+                closed.append(orm.id)
 
         if closed:
             self.session.commit()

@@ -2,7 +2,11 @@
 
 from typing import Protocol
 
+from incidentflow.domain.history.models import IncidentEventKind
 from incidentflow.domain.memory.models import IncidentLesson, IncidentLessonConfirmation
+from incidentflow.infrastructure.database.incident_event_repository import (
+    IncidentEventRepository,
+)
 from incidentflow.infrastructure.database.incident_lesson_repository import IncidentLessonRepository
 
 
@@ -17,12 +21,21 @@ class IncidentLessonIndexer(Protocol):
 class IncidentLessonService:
     """Persist a reviewed lesson, then confirm it only after Pinecone indexing succeeds."""
 
-    def __init__(self, repository: IncidentLessonRepository, indexer: IncidentLessonIndexer) -> None:
+    def __init__(
+        self,
+        repository: IncidentLessonRepository,
+        indexer: IncidentLessonIndexer,
+        *,
+        events: IncidentEventRepository | None = None,
+    ) -> None:
         """Keep the persistence and isolated-vector-store boundaries for confirmation."""
         self._repository = repository
         self._indexer = indexer
+        self._events = events
 
-    def confirm_and_index(self, confirmation: IncidentLessonConfirmation) -> IncidentLesson:
+    def confirm_and_index(
+        self, confirmation: IncidentLessonConfirmation, *, actor: str = "system"
+    ) -> IncidentLesson:
         """Save the operator's confirmed lesson and index it in Pinecone for future investigations."""
         lesson = self._repository.create_pending(confirmation)
         try:
@@ -36,4 +49,13 @@ class IncidentLessonService:
         confirmed_lesson = self._repository.mark_confirmed(lesson.id, vector_id)
         if confirmed_lesson is None:
             raise RuntimeError("Unable to confirm the indexed incident lesson.")
+        if self._events is not None:
+            self._events.record(
+                IncidentEventKind.LESSON_SAVED,
+                incident_id=self._repository.incident_id_for(confirmation.investigation_id),
+                investigation_id=confirmation.investigation_id,
+                actor=actor,
+                summary=f"Lesson saved to memory by {actor}",
+                details={"service": confirmation.service},
+            )
         return confirmed_lesson

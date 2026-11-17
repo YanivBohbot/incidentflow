@@ -19,6 +19,10 @@ from incidentflow.core.config import Settings
 from incidentflow.demo.scenarios import DEMO_ALARM_NAMES, SCENARIOS, Scenario
 from incidentflow.demo.simulator import AlarmFired, DemoSimulator, alarm_arn
 from incidentflow.domain.demo.models import DemoRunStarted
+from incidentflow.domain.history.models import IncidentEventKind
+from incidentflow.infrastructure.database.incident_event_repository import (
+    IncidentEventRepository,
+)
 from incidentflow.infrastructure.database.incident_repository import IncidentRepository
 from incidentflow.infrastructure.database.investigation_repository import (
     InvestigationRepository,
@@ -142,7 +146,10 @@ class LocalDemoRunner:
         }
         with self._session_factory() as session:
             IncidentIngestionService(
-                IncidentRepository(session), tag_reader, self._settings.ingest_alarm_prefix
+                IncidentRepository(session),
+                tag_reader,
+                self._settings.ingest_alarm_prefix,
+                events=IncidentEventRepository(session),
             ).ingest_cloudwatch_alarm(event)
 
 
@@ -162,25 +169,42 @@ class DemoService:
         *,
         investigations: InvestigationRepository | None = None,
         run_in_progress_seconds: float = 0,
+        events: IncidentEventRepository | None = None,
     ) -> None:
         self._repository = repository
+        self._events = events
         self._investigations = investigations
         self._runner = runner
         self._auto_cooldown = timedelta(seconds=auto_cooldown_seconds)
         self._run_in_progress = timedelta(seconds=run_in_progress_seconds)
         self._now = now
 
-    def start_run(self, only_if_idle: bool = False) -> DemoRunStarted:
+    def start_run(self, only_if_idle: bool = False, *, actor: str = "demo") -> DemoRunStarted:
         """Start a run unless one is in progress, or, for an automatic start, the demo is busy."""
         if self._run_in_progress_now():
             return DemoRunStarted(started=False)
         if only_if_idle and (self._recently_active() or self._under_investigation()):
             return DemoRunStarted(started=False)
 
-        closed = self._repository.close_open_alarm_incidents(DEMO_ALARM_NAMES)
+        closed = self._repository.close_open_alarm_incident_ids(DEMO_ALARM_NAMES)
         run_id = uuid4().hex
         self._runner.start(run_id)
-        return DemoRunStarted(started=True, run_id=run_id, closed_incidents=closed)
+        if self._events is not None:
+            for incident_id in closed:
+                self._events.record(
+                    IncidentEventKind.INCIDENT_CLOSED,
+                    incident_id=incident_id,
+                    actor="demo",
+                    summary="Closed by a new demo run",
+                    details={"run_id": run_id},
+                )
+            self._events.record(
+                IncidentEventKind.DEMO_RUN_STARTED,
+                actor=actor,
+                summary=f"Demo run started; {len(closed)} previous incidents closed",
+                details={"run_id": run_id, "closed": len(closed)},
+            )
+        return DemoRunStarted(started=True, run_id=run_id, closed_incidents=len(closed))
 
     def _recently_active(self) -> bool:
         return self._created_within(self._auto_cooldown)

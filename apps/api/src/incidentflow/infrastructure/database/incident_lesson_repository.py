@@ -42,6 +42,11 @@ class IncidentLessonRepository:
             }
         )
 
+    def incident_id_for(self, investigation_id: UUID) -> UUID | None:
+        """Return the incident an investigation belongs to."""
+        investigation = self.session.get(InvestigationORM, investigation_id)
+        return investigation.incident_id if investigation else None
+
     def create_pending(self, confirmation: IncidentLessonConfirmation) -> IncidentLesson:
         """Create an index-eligible lesson only for a completed investigation."""
         investigation = self.session.get(InvestigationORM, confirmation.investigation_id)

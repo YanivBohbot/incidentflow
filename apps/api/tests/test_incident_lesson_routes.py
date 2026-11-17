@@ -1,6 +1,7 @@
 from uuid import uuid4
 
 from incidentflow.api.routes.investigations import confirm_incident_lesson
+from incidentflow.core.auth import LOCAL_PRINCIPAL
 from incidentflow.domain.memory.models import (
     IncidentLesson,
     IncidentLessonConfirmation,
@@ -28,8 +29,9 @@ def test_confirm_incident_lesson_uses_the_explicit_operator_input() -> None:
             return object() if requested_id == investigation_id else None
 
     class FakeLessonService:
-        def confirm_and_index(self, confirmation):
+        def confirm_and_index(self, confirmation, *, actor):
             assert confirmation == request
+            assert actor == LOCAL_PRINCIPAL.username
             return expected
 
     lesson = confirm_incident_lesson(
@@ -37,6 +39,7 @@ def test_confirm_incident_lesson_uses_the_explicit_operator_input() -> None:
         request,
         FakeInvestigationService(),
         FakeLessonService(),
+        LOCAL_PRINCIPAL,
     )
 
     assert lesson == expected

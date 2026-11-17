@@ -13,8 +13,12 @@ from incidentflow.application.services.demo_service import (
     LambdaDemoRunner,
     LocalDemoRunner,
 )
+from incidentflow.core.auth import OperatorPrincipal
 from incidentflow.core.config import get_settings
 from incidentflow.domain.demo.models import DemoRunStarted, DemoStatus
+from incidentflow.infrastructure.database.incident_event_repository import (
+    IncidentEventRepository,
+)
 from incidentflow.infrastructure.database.incident_repository import IncidentRepository
 from incidentflow.infrastructure.database.investigation_repository import (
     InvestigationRepository,
@@ -44,6 +48,7 @@ def get_demo_service(
         settings.demo_auto_cooldown_seconds,
         investigations=InvestigationRepository(session),
         run_in_progress_seconds=settings.demo_interval_seconds * RUN_IN_PROGRESS_INTERVALS,
+        events=IncidentEventRepository(session),
     )
 
 
@@ -67,12 +72,14 @@ def demo_status() -> DemoStatus:
 def start_demo_run(
     service: DemoServiceDep,
     response: Response,
+    principal: OperatorPrincipal,
     only_if_idle: bool = False,
 ) -> DemoRunStarted:
     """Start a demo run, or answer 200 without starting when one is not allowed."""
     if not get_settings().demo_enabled:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo is disabled")
-    result = service.start_run(only_if_idle=only_if_idle)
+    actor = "demo" if only_if_idle else principal.username
+    result = service.start_run(only_if_idle=only_if_idle, actor=actor)
     if not result.started:
         response.status_code = status.HTTP_200_OK
     return result

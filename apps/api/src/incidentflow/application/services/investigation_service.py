@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from incidentflow.agent.orchestration.policies.human_review import jira_tool_resume_payload
 from incidentflow.agent.orchestration.trace import build_investigation_trace
 from incidentflow.application.jobs.queue import JobQueue
+from incidentflow.domain.history.models import IncidentEventKind
 from incidentflow.domain.human_review.models import HumanReviewDecision, HumanReviewType
 from incidentflow.domain.investigations.models import (
     Investigation,
@@ -16,6 +17,9 @@ from incidentflow.domain.investigations.models import (
     InvestigationLifecycle,
     InvestigationStart,
     InvestigationTraceStep,
+)
+from incidentflow.infrastructure.database.incident_event_repository import (
+    IncidentEventRepository,
 )
 from incidentflow.infrastructure.database.incident_repository import IncidentRepository
 from incidentflow.infrastructure.database.investigation_repository import (
@@ -44,13 +48,18 @@ class InvestigationService:
         incident_repository: IncidentRepository,
         queue: JobQueue,
         workflow: Any,
+        *,
+        events: IncidentEventRepository | None = None,
     ) -> None:
         self.repository = repository
+        self.events = events
         self.incident_repository = incident_repository
         self.queue = queue
         self.workflow = workflow
 
-    def start_investigation(self, data: InvestigationStart) -> Investigation | None:
+    def start_investigation(
+        self, data: InvestigationStart, *, actor: str = "system"
+    ) -> Investigation | None:
         """Queue an investigation as PENDING, or refuse when the incident already has one active."""
         incident = self.incident_repository.get_incident(data.incident_id)
         if incident is None:
@@ -69,6 +78,14 @@ class InvestigationService:
             if not is_active_investigation_conflict(error):
                 raise
             raise self._already_active(incident.id) from error
+        if self.events is not None:
+            self.events.record(
+                IncidentEventKind.INVESTIGATION_STARTED,
+                incident_id=incident.id,
+                investigation_id=investigation.id,
+                actor=actor,
+                summary=f"Investigation started by {actor}",
+            )
         self._enqueue(investigation.id)
         return investigation
 
@@ -124,8 +141,32 @@ class InvestigationService:
             ) from error
         if resumed is None:
             return None
+        if self.events is not None:
+            self._record_decision(resumed, review, decision)
         self._enqueue(resumed.id)
         return resumed
+
+    def _record_decision(
+        self, investigation: Investigation, review: Any, decision: HumanReviewDecision
+    ) -> None:
+        tool_name = (review.draft or {}).get("tool_name") if review else None
+        subject = "Jira write" if tool_name else "report review"
+        verb = {"APPROVE": "approved", "REJECT": "rejected"}.get(
+            decision.decision.value, "sent back for information"
+        )
+        details = {"decision": decision.decision.value, "reason": decision.reason}
+        if review:
+            details["review_type"] = review.review_type.value
+        if tool_name:
+            details["tool_name"] = tool_name
+        self.events.record(
+            IncidentEventKind.REVIEW_DECIDED,
+            incident_id=investigation.incident_id,
+            investigation_id=investigation.id,
+            actor=decision.actor,
+            summary=f"{subject.capitalize()} {verb} by {decision.actor}",
+            details=details,
+        )
 
     def _enqueue(self, investigation_id: UUID) -> None:
         """Send the job after the commit; a failed send is repaired by the sweeper."""

@@ -10,11 +10,14 @@ from sqlalchemy.orm import Session
 from incidentflow.application.services.incident_service import (
     IncidentService,
 )
-from incidentflow.core.auth import require_operator, require_viewer
+from incidentflow.core.auth import OperatorPrincipal, require_operator, require_viewer
 from incidentflow.domain.incidents.models import (
     Incident,
     IncidentCreate,
     IncidentUpdate,
+)
+from incidentflow.infrastructure.database.incident_event_repository import (
+    IncidentEventRepository,
 )
 from incidentflow.infrastructure.database.incident_repository import (
     IncidentRepository,
@@ -32,7 +35,7 @@ def get_incident_service(
     session: Annotated[Session, Depends(get_db_session)],
 ) -> IncidentService:
     repository = IncidentRepository(session)
-    return IncidentService(repository)
+    return IncidentService(repository, events=IncidentEventRepository(session))
 
 
 IncidentServiceDep = Annotated[IncidentService, Depends(get_incident_service)]
@@ -52,9 +55,10 @@ router = APIRouter(prefix="/incidents", tags=["Incidents"])
 def create_incident(
     data: IncidentCreate,
     service: IncidentServiceDep,
+    principal: OperatorPrincipal,
 ) -> Incident:
     """Record an incident reported by an operator."""
-    return service.create_incident(data)
+    return service.create_incident(data, actor=principal.username)
 
 
 @router.get("", response_model=list[Incident], dependencies=CAN_READ)
@@ -101,9 +105,11 @@ def update_incident(
 
 
 @router.post("/{incident_id}/resolve", response_model=Incident, dependencies=CAN_OPERATE)
-def resolve_incident(incident_id: UUID, service: IncidentServiceDep) -> Incident:
+def resolve_incident(
+    incident_id: UUID, service: IncidentServiceDep, principal: OperatorPrincipal
+) -> Incident:
     """An operator confirms the problem is fixed; the incident leaves the open queue."""
-    incident = service.resolve_incident(incident_id)
+    incident = service.resolve_incident(incident_id, actor=principal.username)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
     return incident

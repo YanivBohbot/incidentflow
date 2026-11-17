@@ -76,7 +76,7 @@ class FakeInvestigationService:
             workflow_thread_id=f"investigation:{self.investigation_id}",
         )
 
-    def start_investigation(self, data):
+    def start_investigation(self, data, *, actor="system"):
         return self._investigation(InvestigationLifecycle.PENDING)
 
     def list_investigations(self):

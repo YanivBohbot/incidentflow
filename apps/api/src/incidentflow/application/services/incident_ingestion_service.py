@@ -5,10 +5,14 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Protocol
 
+from incidentflow.domain.history.models import IncidentEventKind
 from incidentflow.domain.incidents.models import (
     AlarmIncidentCreate,
     Incident,
     IncidentPriority,
+)
+from incidentflow.infrastructure.database.incident_event_repository import (
+    IncidentEventRepository,
 )
 from incidentflow.infrastructure.database.incident_repository import (
     DuplicateOpenIncidentError,
@@ -65,8 +69,11 @@ class IncidentIngestionService:
         repository: IncidentRepository,
         tag_reader: AlarmTagReader,
         alarm_prefix: str,
+        *,
+        events: IncidentEventRepository | None = None,
     ) -> None:
         self._repository = repository
+        self._events = events
         self._tag_reader = tag_reader
         self._alarm_prefix = alarm_prefix
 
@@ -91,6 +98,13 @@ class IncidentIngestionService:
             incident = self._repository.create_alarm_incident(data)
         except DuplicateOpenIncidentError:
             return self._finish(name, IngestionResult(IngestionOutcome.DUPLICATE, None))
+        if self._events is not None:
+            self._events.record(
+                IncidentEventKind.INCIDENT_CREATED,
+                incident_id=incident.id,
+                summary=f"CloudWatch alarm {name} raised the incident",
+                details={"source": "CLOUDWATCH_ALARM", "alarm": name},
+            )
         return self._finish(name, IngestionResult(IngestionOutcome.CREATED, incident))
 
     def _finish(self, name: str, result: IngestionResult) -> IngestionResult:

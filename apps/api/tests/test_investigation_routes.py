@@ -20,7 +20,7 @@ class FakeInvestigationService:
     def __init__(self) -> None:
         self.investigation_id = uuid4()
 
-    def start_investigation(self, data):
+    def start_investigation(self, data, *, actor="system"):
         if data.incident_id == UUID("00000000-0000-0000-0000-000000000000"):
             return None
         return Investigation(
@@ -151,7 +151,7 @@ def test_resolve_human_review_rejects_a_forbidden_edit_with_422() -> None:
 
 def test_start_rejects_active_investigation_with_409() -> None:
     class ActiveService(FakeInvestigationService):
-        def start_investigation(self, data):
+        def start_investigation(self, data, *, actor="system"):
             raise InvestigationAlreadyActiveError(uuid4())
 
     app = FastAPI()
