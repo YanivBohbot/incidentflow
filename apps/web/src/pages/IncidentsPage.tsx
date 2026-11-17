@@ -52,10 +52,12 @@ type IncidentsPageProps = {
   onRunDemo?: () => Promise<void>
   /** Called once per page visit when the demo is enabled. */
   onAutoStartDemo?: () => Promise<void>
+  /** Open the History tab on this incident's journal. */
+  onViewJournal?: (incidentId: string) => void
 }
 
 /** Incident queue on the left; the report form or the selected incident on the right. */
-export function IncidentsPage({ incidents: allIncidents, investigations, selectedIncident, onCreateIncident, onSelectIncident, onStartInvestigation, isCreateFormOpen, isStartingInvestigation = false, onCloseCreateForm, demoEnabled = false, isDemoStarting = false, onRunDemo, onAutoStartDemo }: IncidentsPageProps) {
+export function IncidentsPage({ incidents: allIncidents, investigations, selectedIncident, onCreateIncident, onSelectIncident, onStartInvestigation, isCreateFormOpen, isStartingInvestigation = false, onCloseCreateForm, demoEnabled = false, isDemoStarting = false, onRunDemo, onAutoStartDemo, onViewJournal }: IncidentsPageProps) {
   const [queueView, setQueueView] = useState<'open' | 'resolved'>('open')
   const incidents = useMemo(() => activeIncidents(allIncidents), [allIncidents])
   const resolved = useMemo(() => resolvedIncidents(allIncidents), [allIncidents])
@@ -204,6 +206,7 @@ export function IncidentsPage({ incidents: allIncidents, investigations, selecte
             ) : (
               <small className="selected-incident-hint">This incident is {selectedIncident.status === 'CLOSED' ? 'closed' : 'resolved'}. Its investigations stay available on the Investigations page.</small>
             )}
+            {onViewJournal && <button className="quiet-button" onClick={() => onViewJournal(selectedIncident.id)} type="button">View journal</button>}
           </div>
         ) : (
           <EmptyState description="Select an incident in the queue to see its details and launch the investigation." title="STEP 2 · Select an incident" />

@@ -14,6 +14,7 @@ type InvestigationsPageProps = {
   onSelectInvestigation: (investigation: Investigation) => void
   onConfirmLesson: (data: IncidentLessonConfirmation) => Promise<IncidentLesson>
   onResolveIncident?: (incidentId: string) => Promise<void>
+  onViewJournal?: (incidentId: string) => void
 }
 
 type ResolveBannerProps = {
@@ -21,30 +22,32 @@ type ResolveBannerProps = {
   incident: Incident
   onResolveIncident?: (incidentId: string) => Promise<void>
   onConfirmLesson: (data: IncidentLessonConfirmation) => Promise<IncidentLesson>
+  onViewJournal?: (incidentId: string) => void
 }
 
 /** Resolve the incident after its investigation; once resolved, offer to save what fixed it. */
-function ResolveBanner({ investigation, incident, onResolveIncident, onConfirmLesson }: ResolveBannerProps) {
+function ResolveBanner({ investigation, incident, onResolveIncident, onConfirmLesson, onViewJournal }: ResolveBannerProps) {
+  const journal = onViewJournal && <button className="quiet-button" onClick={() => onViewJournal(incident.id)} type="button">View journal</button>
   const [showLesson, setShowLesson] = useState(false)
   const [lessonSaved, setLessonSaved] = useState(false)
   if (isActiveIncident(incident)) {
-    return <div className="resolve-banner"><span>Investigation complete. Once the problem is fixed, mark the incident resolved so it leaves the open queue.</span><button className="primary-button" onClick={() => void onResolveIncident?.(incident.id)} type="button">Mark incident resolved</button></div>
+    return <div className="resolve-banner"><span>Investigation complete. Once the problem is fixed, mark the incident resolved so it leaves the open queue.</span><span className="resolve-actions">{journal}<button className="primary-button" onClick={() => void onResolveIncident?.(incident.id)} type="button">Mark incident resolved</button></span></div>
   }
   return <>
     <div className="resolve-banner is-resolved"><span>Incident {incident.status === 'CLOSED' ? 'closed' : 'resolved'}.</span>{lessonSaved
       ? <strong className="lesson-saved" role="status">✓ Lesson saved to memory. Similar incidents will reuse it.</strong>
-      : <button className="secondary-button" onClick={() => setShowLesson((value) => !value)} type="button">{showLesson ? 'Hide the lesson form' : 'Save what fixed it as a lesson'}</button>}</div>
+      : <button className="secondary-button" onClick={() => setShowLesson((value) => !value)} type="button">{showLesson ? 'Hide the lesson form' : 'Save what fixed it as a lesson'}</button>}{journal}</div>
     {showLesson && !lessonSaved && <ConfirmedLessonForm incident={incident} investigation={investigation} onConfirm={onConfirmLesson} onSaved={() => { setLessonSaved(true); setShowLesson(false) }} />}
   </>
 }
 
 /** Show past investigations and let an operator curate completed lessons. */
-export function InvestigationsPage({ incidents, investigations, selectedInvestigation, onSelectInvestigation, onConfirmLesson, onResolveIncident }: InvestigationsPageProps) {
+export function InvestigationsPage({ incidents, investigations, selectedInvestigation, onSelectInvestigation, onConfirmLesson, onResolveIncident, onViewJournal }: InvestigationsPageProps) {
   /** Banner shown only on completed investigations whose incident is known. */
   const resolveBanner = (investigation: Investigation) => {
     const incident = incidentFor(investigation)
     if (investigation.lifecycle !== 'COMPLETED' || !incident) return null
-    return <ResolveBanner incident={incident} investigation={investigation} key={investigation.id} onConfirmLesson={onConfirmLesson} onResolveIncident={onResolveIncident} />
+    return <ResolveBanner incident={incident} investigation={investigation} key={investigation.id} onConfirmLesson={onConfirmLesson} onResolveIncident={onResolveIncident} onViewJournal={onViewJournal} />
   }
   /** Find the incident that gives each investigation its operator-facing title. */
   const incidentFor = (investigation: Investigation) => incidents.find((incident) => incident.id === investigation.incident_id)

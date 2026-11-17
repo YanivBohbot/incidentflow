@@ -5,6 +5,7 @@ import type { AppPage } from './components/layout/AppShell'
 import { MetricCard } from './components/ui/MetricCard'
 import { useIncidentFlow } from './hooks/useIncidentFlow'
 import { ApprovalsPage } from './pages/ApprovalsPage'
+import { HistoryPage } from './pages/HistoryPage'
 import { IncidentsPage } from './pages/IncidentsPage'
 import { InvestigationsPage } from './pages/InvestigationsPage'
 import { OverviewPage } from './pages/OverviewPage'
@@ -13,6 +14,18 @@ function App() {
   const [activePage, setActivePage] = useState<AppPage>('overview')
   const [isCreateIncidentFormOpen, setIsCreateIncidentFormOpen] = useState(false)
   const workspace = useIncidentFlow(activePage)
+  const [journalIncidentId, setJournalIncidentId] = useState<string | undefined>(undefined)
+
+  function viewJournal(incidentId: string) {
+    setJournalIncidentId(incidentId)
+    setActivePage('history')
+  }
+
+  function openInvestigation(investigationId: string) {
+    const investigation = workspace.investigations.find((item) => item.id === investigationId)
+    if (investigation) workspace.selectInvestigation(investigation)
+    setActivePage('investigations')
+  }
 
   async function handleStartInvestigation() {
     setActivePage('investigations')
@@ -38,8 +51,9 @@ function App() {
           operationalMetrics={workspace.operationalMetrics}
           readiness={workspace.readiness}
         />}
-        {activePage === 'incidents' && <IncidentsPage demoEnabled={workspace.demoEnabled} isDemoStarting={workspace.isDemoStarting} onAutoStartDemo={workspace.autoStartDemo} onRunDemo={workspace.startDemoRun} incidents={workspace.incidents} investigations={workspace.investigations} isCreateFormOpen={isCreateIncidentFormOpen} isStartingInvestigation={workspace.isStartingInvestigation} onCloseCreateForm={() => setIsCreateIncidentFormOpen(false)} onCreateIncident={workspace.createIncident} onSelectIncident={workspace.setSelectedIncident} onStartInvestigation={handleStartInvestigation} selectedIncident={workspace.selectedIncident} />}
-        {activePage === 'investigations' && <InvestigationsPage incidents={workspace.incidents} investigations={workspace.investigations} onConfirmLesson={workspace.confirmIncidentLesson} onResolveIncident={workspace.resolveIncident} onSelectInvestigation={workspace.selectInvestigation} selectedInvestigation={workspace.selectedInvestigation} />}
+        {activePage === 'incidents' && <IncidentsPage demoEnabled={workspace.demoEnabled} isDemoStarting={workspace.isDemoStarting} onAutoStartDemo={workspace.autoStartDemo} onRunDemo={workspace.startDemoRun} incidents={workspace.incidents} investigations={workspace.investigations} isCreateFormOpen={isCreateIncidentFormOpen} isStartingInvestigation={workspace.isStartingInvestigation} onCloseCreateForm={() => setIsCreateIncidentFormOpen(false)} onCreateIncident={workspace.createIncident} onSelectIncident={workspace.setSelectedIncident} onStartInvestigation={handleStartInvestigation} onViewJournal={viewJournal} selectedIncident={workspace.selectedIncident} />}
+        {activePage === 'investigations' && <InvestigationsPage incidents={workspace.incidents} investigations={workspace.investigations} onConfirmLesson={workspace.confirmIncidentLesson} onResolveIncident={workspace.resolveIncident} onViewJournal={viewJournal} onSelectInvestigation={workspace.selectInvestigation} selectedInvestigation={workspace.selectedInvestigation} />}
+        {activePage === 'history' && <HistoryPage incidents={workspace.incidents} initialIncidentId={journalIncidentId} key={journalIncidentId ?? 'all'} onOpenInvestigation={openInvestigation} />}
         {activePage === 'approvals' && <ApprovalsPage incidents={workspace.incidents} investigations={workspace.investigations} onResolve={workspace.resolveHumanReview} />}
       </>}
     </AppShell>

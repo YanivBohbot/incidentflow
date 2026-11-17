@@ -86,6 +86,17 @@ describe('IncidentsPage queue', () => {
     expect(screen.getByRole('button', { name: /^High/ })).toHaveTextContent('1')
   })
 
+  it('View journal calls onViewJournal with the incident id', async () => {
+    const onViewJournal = vi.fn()
+    render(
+      <IncidentsPage incidents={incidents} investigations={investigations} isCreateFormOpen={false} onCloseCreateForm={vi.fn()} onCreateIncident={vi.fn()} onSelectIncident={vi.fn()} onStartInvestigation={vi.fn()} onViewJournal={onViewJournal} selectedIncident={incidents[1]} />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'View journal' }))
+
+    expect(onViewJournal).toHaveBeenCalledWith('crit')
+  })
+
   it('disables the launch button while the start request is in flight', async () => {
     const onStart = renderSelected(true)
 

@@ -12,6 +12,28 @@ export type Incident = {
   updated_at: string
 }
 
+export type IncidentEventKind =
+  | 'INCIDENT_CREATED' | 'INVESTIGATION_STARTED' | 'REVIEW_REQUESTED' | 'REVIEW_DECIDED'
+  | 'INVESTIGATION_COMPLETED' | 'INVESTIGATION_FAILED' | 'INCIDENT_RESOLVED' | 'INCIDENT_CLOSED'
+  | 'LESSON_SAVED' | 'DEMO_RUN_STARTED'
+
+export type IncidentEvent = {
+  id: string
+  incident_id: string | null
+  investigation_id: string | null
+  kind: IncidentEventKind
+  occurred_at: string
+  actor: string
+  summary: string
+  details: Record<string, unknown>
+  reconstructed: boolean
+  incident_title: string | null
+}
+
+export type IncidentEventPage = { events: IncidentEvent[], next_before: string | null }
+
+export type HistoryQuery = { incidentId?: string, kinds?: IncidentEventKind[], before?: string }
+
 export type DemoRun = {
   started: boolean
   run_id: string | null
@@ -173,4 +195,13 @@ export const api = {
   startDemoRun: (onlyIfIdle = false) =>
     request<DemoRun>(`/demo/runs${onlyIfIdle ? '?only_if_idle=true' : ''}`, { method: 'POST' }),
   getReadiness: () => requestOperational<Readiness>('/health/ready'),
+  getHistory: ({ incidentId, kinds, before }: HistoryQuery) => {
+    const params = new URLSearchParams()
+    if (incidentId) params.set('incident_id', incidentId)
+    if (kinds?.length) params.set('kinds', kinds.join(','))
+    if (before) params.set('before', before)
+    const query = params.toString()
+    return request<IncidentEventPage>(`/history${query ? `?${query}` : ''}`)
+  },
+  getIncidentEvents: (incidentId: string) => request<IncidentEvent[]>(`/incidents/${incidentId}/events`),
 }

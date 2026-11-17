@@ -1,7 +1,7 @@
 /** Page frame: sidebar navigation, page title, and status message. */
 import type { ReactNode } from 'react'
 
-export type AppPage = 'overview' | 'incidents' | 'investigations' | 'approvals'
+export type AppPage = 'overview' | 'incidents' | 'investigations' | 'approvals' | 'history'
 
 type NavigationItem = {
   id: AppPage
@@ -35,6 +35,12 @@ const navigation: NavigationItem[] = [
     label: 'Approvals',
     description: 'Resume paused workflow decisions',
     intro: 'The agents are paused here. Read what they want to do, edit it if needed, then approve or reject.',
+  },
+  {
+    id: 'history',
+    label: 'History',
+    description: 'Decision timeline and incident journals',
+    intro: 'Look back at what was done: every alarm, investigation, decision, resolution, and lesson, in order.',
   },
 ]
 

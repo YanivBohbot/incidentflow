@@ -33,6 +33,15 @@ describe('InvestigationsPage resolve banner', () => {
     expect(screen.getByText('Incident resolved.')).toBeInTheDocument()
   })
 
+  it('View journal in the resolve banner calls onViewJournal', async () => {
+    const onViewJournal = vi.fn()
+    render(<InvestigationsPage incidents={[incident('RESOLVED')]} investigations={[completed]} onConfirmLesson={vi.fn()} onSelectInvestigation={vi.fn()} onViewJournal={onViewJournal} selectedInvestigation={completed} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'View journal' }))
+
+    expect(onViewJournal).toHaveBeenCalledWith('inc')
+  })
+
   it('hides the lesson form until the incident is resolved', async () => {
     renderPage('OPEN')
     expect(screen.queryByRole('region', { name: 'Confirm incident lesson for memory' })).toBeNull()
