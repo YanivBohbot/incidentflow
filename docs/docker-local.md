@@ -52,8 +52,10 @@ which is the image the api Lambda runs; the worker, sweeper, and migrate Lambdas
 target, the same image without the Lambda Web Adapter. The Lambda-only pieces are inert locally:
 the adapter in `/opt/extensions` is started only by the Lambda service, `awslambdaric` is used only when a Lambda overrides the command with
 `python -m awslambdaric incidentflow.lambda_handlers.<name>`, and the bundled Node runtime with
-`mongodb-mcp-server` runs only when `MONGODB_MCP_TRANSPORT=stdio` (Compose keeps the default HTTP
-transport to a host MongoDB MCP server).
+`mongodb-mcp-server` runs only when `MONGODB_MCP_TRANSPORT=stdio`. Compose sets stdio for the api
+and worker, as the Lambdas do: each investigation starts the image's pinned MongoDB MCP server
+and connects to MongoDB on the host through `host.docker.internal:27017` (override with
+`MONGODB_MCP_DOCKER_CONNECTION_STRING`). No MongoDB MCP server needs to run on the host.
 
 If a Vite development server already uses port `5173`, set `WEB_PORT=5174` in
 the root `.env` before starting the `web` service. The web application will

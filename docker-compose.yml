@@ -45,8 +45,10 @@ services:
       # The image ships the CloudWatch MCP server in its own venv; override host uv settings.
       CLOUDWATCH_MCP_COMMAND: /opt/cloudwatch-mcp/bin/awslabs.cloudwatch-mcp-server
       CLOUDWATCH_MCP_COMMAND_ARGS: ""
-      # The MongoDB MCP server runs on the host; 127.0.0.1 inside the container is the container.
-      MONGODB_MCP_URL: ${MONGODB_MCP_DOCKER_URL:-http://host.docker.internal:3000/mcp}
+      # As on AWS, each investigation starts the image's pinned MongoDB MCP server over stdio.
+      # MongoDB itself runs on the host; 127.0.0.1 inside the container is the container.
+      MONGODB_MCP_TRANSPORT: stdio
+      MONGODB_MCP_CONNECTION_STRING: ${MONGODB_MCP_DOCKER_CONNECTION_STRING:-mongodb://host.docker.internal:27017/?directConnection=true}
       # The container has no Docker CLI, so GitHub MCP uses GitHub's remote server over HTTP
       # with GITHUB_PERSONAL_ACCESS_TOKEN (read-only header set by the client).
       GITHUB_MCP_TRANSPORT: http
@@ -88,8 +90,10 @@ services:
       # The image ships the CloudWatch MCP server in its own venv; override host uv settings.
       CLOUDWATCH_MCP_COMMAND: /opt/cloudwatch-mcp/bin/awslabs.cloudwatch-mcp-server
       CLOUDWATCH_MCP_COMMAND_ARGS: ""
-      # The MongoDB MCP server runs on the host; 127.0.0.1 inside the container is the container.
-      MONGODB_MCP_URL: ${MONGODB_MCP_DOCKER_URL:-http://host.docker.internal:3000/mcp}
+      # As on AWS, each investigation starts the image's pinned MongoDB MCP server over stdio.
+      # MongoDB itself runs on the host; 127.0.0.1 inside the container is the container.
+      MONGODB_MCP_TRANSPORT: stdio
+      MONGODB_MCP_CONNECTION_STRING: ${MONGODB_MCP_DOCKER_CONNECTION_STRING:-mongodb://host.docker.internal:27017/?directConnection=true}
       # The container has no Docker CLI, so GitHub MCP uses GitHub's remote server over HTTP
       # with GITHUB_PERSONAL_ACCESS_TOKEN (read-only header set by the client).
       GITHUB_MCP_TRANSPORT: http
