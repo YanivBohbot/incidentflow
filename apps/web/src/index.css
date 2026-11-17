@@ -402,3 +402,4 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .report-actions ol { color:#064e3b !important; font-size:15px !important; font-weight:600; }
 .report-actions li::marker { color:#059669; font-weight:800; }
 .report-actions .quiet-button { margin-top:4px; }
+.lesson-saved { color:#166534; font-size:14px; }

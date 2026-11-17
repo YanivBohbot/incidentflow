@@ -7,10 +7,12 @@ type ConfirmedLessonFormProps = {
   /** Source incident, used to prefill the affected service. */
   incident?: Incident
   onConfirm: (data: IncidentLessonConfirmation) => Promise<IncidentLesson>
+  /** Called once the lesson is indexed, so the parent can close the form. */
+  onSaved?: () => void
 }
 
 /** Collect only the reviewed lesson that may enter long-term incident memory. */
-export function ConfirmedLessonForm({ investigation, incident, onConfirm }: ConfirmedLessonFormProps) {
+export function ConfirmedLessonForm({ investigation, incident, onConfirm, onSaved }: ConfirmedLessonFormProps) {
   const suggestedResolution = investigation.report?.proposed_actions?.[0]
   const [service, setService] = useState(incident?.service ?? '')
   const [environment, setEnvironment] = useState('production')
@@ -33,9 +35,12 @@ export function ConfirmedLessonForm({ investigation, incident, onConfirm }: Conf
         validated_resolution: resolution,
         tenant_id: null,
       })
-      setMessage(lesson.state === 'CONFIRMED'
-        ? 'Confirmed lesson indexed for future investigations.'
-        : `Lesson was not indexed: ${lesson.index_error ?? 'Unknown indexing error.'}`)
+      if (lesson.state === 'CONFIRMED') {
+        setMessage('Confirmed lesson indexed for future investigations.')
+        onSaved?.()
+      } else {
+        setMessage(`Lesson was not indexed: ${lesson.index_error ?? 'Unknown indexing error.'}`)
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not confirm the lesson.')
     } finally {

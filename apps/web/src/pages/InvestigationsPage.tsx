@@ -26,12 +26,15 @@ type ResolveBannerProps = {
 /** Resolve the incident after its investigation; once resolved, offer to save what fixed it. */
 function ResolveBanner({ investigation, incident, onResolveIncident, onConfirmLesson }: ResolveBannerProps) {
   const [showLesson, setShowLesson] = useState(false)
+  const [lessonSaved, setLessonSaved] = useState(false)
   if (isActiveIncident(incident)) {
     return <div className="resolve-banner"><span>Investigation complete. Once the problem is fixed, mark the incident resolved so it leaves the open queue.</span><button className="primary-button" onClick={() => void onResolveIncident?.(incident.id)} type="button">Mark incident resolved</button></div>
   }
   return <>
-    <div className="resolve-banner is-resolved"><span>Incident {incident.status === 'CLOSED' ? 'closed' : 'resolved'}.</span><button className="secondary-button" onClick={() => setShowLesson((value) => !value)} type="button">{showLesson ? 'Hide the lesson form' : 'Save what fixed it as a lesson'}</button></div>
-    {showLesson && <ConfirmedLessonForm incident={incident} investigation={investigation} onConfirm={onConfirmLesson} />}
+    <div className="resolve-banner is-resolved"><span>Incident {incident.status === 'CLOSED' ? 'closed' : 'resolved'}.</span>{lessonSaved
+      ? <strong className="lesson-saved" role="status">✓ Lesson saved to memory. Similar incidents will reuse it.</strong>
+      : <button className="secondary-button" onClick={() => setShowLesson((value) => !value)} type="button">{showLesson ? 'Hide the lesson form' : 'Save what fixed it as a lesson'}</button>}</div>
+    {showLesson && !lessonSaved && <ConfirmedLessonForm incident={incident} investigation={investigation} onConfirm={onConfirmLesson} onSaved={() => { setLessonSaved(true); setShowLesson(false) }} />}
   </>
 }
 
