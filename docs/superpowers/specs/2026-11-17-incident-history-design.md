@@ -60,8 +60,9 @@ not recorded at all.
 
 Indexes: `(occurred_at DESC)`, `(incident_id, occurred_at)`.
 
-Kinds and where they are written (same DB transaction as the state change, so an event exists
-only if the change was committed):
+Kinds and where they are written. Repositories commit on their own, so an event is appended right
+after the committed state change: a crash in between can lose one event, but an event is never
+written for a change that did not happen:
 
 | Kind | Written by | Actor |
 |---|---|---|
