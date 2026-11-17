@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Incident, Investigation } from '../api'
 import { EmptyState } from '../components/ui/EmptyState'
-import { activeIncidents } from '../features/incidents/activeIncidents'
+import { activeIncidents, isActiveIncident, resolvedIncidents } from '../features/incidents/activeIncidents'
 import { IncidentForm } from '../features/incidents/IncidentForm'
 
 type Severity = Incident['priority']
@@ -58,7 +58,10 @@ type IncidentsPageProps = {
  * either the report form or the selected incident with its launch button (step 2).
  */
 export function IncidentsPage({ incidents: allIncidents, investigations, selectedIncident, onCreateIncident, onSelectIncident, onStartInvestigation, isCreateFormOpen, isStartingInvestigation = false, onCloseCreateForm, demoEnabled = false, isDemoStarting = false, onRunDemo, onAutoStartDemo }: IncidentsPageProps) {
+  const [queueView, setQueueView] = useState<'open' | 'resolved'>('open')
   const incidents = useMemo(() => activeIncidents(allIncidents), [allIncidents])
+  const resolved = useMemo(() => resolvedIncidents(allIncidents), [allIncidents])
+  const shownIncidents = queueView === 'open' ? incidents : resolved
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('ALL')
   const [now, setNow] = useState(() => Date.now())
   const [newIds, setNewIds] = useState<Set<string>>(new Set())
@@ -107,10 +110,11 @@ export function IncidentsPage({ incidents: allIncidents, investigations, selecte
 
   /** Investigations are listed newest first, so the first match is the latest run. */
   const latestInvestigation = (incident: Incident) => investigations.find((item) => item.incident_id === incident.id)
-  const countFor = (severity: SeverityFilter) => severity === 'ALL' ? incidents.length : incidents.filter((incident) => incident.priority === severity).length
-  const visibleIncidents = incidents
+  const countFor = (severity: SeverityFilter) => severity === 'ALL' ? shownIncidents.length : shownIncidents.filter((incident) => incident.priority === severity).length
+  const visibleIncidents = shownIncidents
     .filter((incident) => severityFilter === 'ALL' || incident.priority === severityFilter)
-    .sort(bySeverityThenDate)
+    // Open: most urgent first. Resolved: most recently resolved first.
+    .sort(queueView === 'open' ? bySeverityThenDate : (left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))
 
   return (
     <div className="page-grid incidents-layout">
@@ -125,6 +129,10 @@ export function IncidentsPage({ incidents: allIncidents, investigations, selecte
             </button>
           )}
         </div>
+        <div aria-label="Open or resolved incidents" className="queue-view" role="group">
+          <button aria-pressed={queueView === 'open'} className={queueView === 'open' ? 'is-active' : ''} onClick={() => setQueueView('open')} type="button">Open <b>{incidents.length}</b></button>
+          <button aria-pressed={queueView === 'resolved'} className={queueView === 'resolved' ? 'is-active' : ''} onClick={() => setQueueView('resolved')} type="button">Resolved <b>{resolved.length}</b></button>
+        </div>
         <div aria-label="Filter by severity" className="severity-filter" role="group">
           {(['ALL', ...SEVERITY_ORDER] as SeverityFilter[]).map((severity) => (
             <button aria-pressed={severityFilter === severity} className={`severity-chip severity-chip-${severity.toLowerCase()} ${severityFilter === severity ? 'is-active' : ''}`} key={severity} onClick={() => setSeverityFilter(severity)} type="button">
@@ -133,8 +141,10 @@ export function IncidentsPage({ incidents: allIncidents, investigations, selecte
             </button>
           ))}
         </div>
-        {incidents.length === 0 ? (
-          <EmptyState description="Report the operational problem first. You can launch the multi-agent investigation afterwards." title="No incidents reported yet" />
+        {shownIncidents.length === 0 ? (
+          queueView === 'open'
+            ? <EmptyState description="Report the operational problem first. You can launch the multi-agent investigation afterwards." title="No open incidents" />
+            : <EmptyState description="Incidents marked resolved after their investigation appear here." title="No resolved incidents yet" />
         ) : visibleIncidents.length === 0 ? (
           <EmptyState description="No incident has this severity. Choose another filter." title="Nothing here" />
         ) : (
@@ -142,13 +152,22 @@ export function IncidentsPage({ incidents: allIncidents, investigations, selecte
             {visibleIncidents.map((incident) => {
               const latest = latestInvestigation(incident)
               return (
-                <li className={`${selectedIncident?.id === incident.id ? 'is-selected' : ''} ${newIds.has(incident.id) ? 'is-new' : ''}`.trim()} key={incident.id}>
+                <li className={[
+                  selectedIncident?.id === incident.id && 'is-selected',
+                  newIds.has(incident.id) && 'is-new',
+                  // Blinks until someone launches an investigation, so open alarms are not missed.
+                  !latest && isActiveIncident(incident) && 'needs-attention',
+                ].filter(Boolean).join(' ')} key={incident.id}>
                   <button onClick={() => { onCloseCreateForm(); onSelectIncident(incident) }} type="button">
                     <span className="incident-badges">
                       <span className={`priority priority-${incident.priority.toLowerCase()}`}>{incident.priority}</span>
-                      <span className={`investigation-state ${latest ? `lifecycle-${latest.lifecycle.toLowerCase()}` : 'is-new'}`}>
-                        {latest ? LIFECYCLE_LABELS[latest.lifecycle] ?? latest.lifecycle : 'Not investigated'}
-                      </span>
+                      {isActiveIncident(incident) ? (
+                        <span className={`investigation-state ${latest ? `lifecycle-${latest.lifecycle.toLowerCase()}` : 'is-new'}`}>
+                          {latest ? LIFECYCLE_LABELS[latest.lifecycle] ?? latest.lifecycle : 'Not investigated'}
+                        </span>
+                      ) : (
+                        <span className="investigation-state is-resolved">{incident.status === 'CLOSED' ? 'Closed' : 'Resolved'}</span>
+                      )}
                       <span className={`source-badge source-${(incident.source ?? 'MANUAL').toLowerCase()}`}>{SOURCE_LABELS[incident.source] ?? 'Manual'}</span>
                     </span>
                     <strong>{incident.title}</strong>
@@ -184,9 +203,13 @@ export function IncidentsPage({ incidents: allIncidents, investigations, selecte
               This description is sent to the Investigation Supervisor, which chooses the specialist agents.
               Ask for a Jira write explicitly (for example “create a Jira issue in project SAM1”) and it will pause for your approval.
             </small>
-            <button className="primary-button" disabled={isStartingInvestigation} onClick={() => void onStartInvestigation()} type="button">
-              {isStartingInvestigation ? 'Queueing the investigation…' : 'Launch multi-agent investigation'}
-            </button>
+            {isActiveIncident(selectedIncident) ? (
+              <button className="primary-button" disabled={isStartingInvestigation} onClick={() => void onStartInvestigation()} type="button">
+                {isStartingInvestigation ? 'Queueing the investigation…' : 'Launch multi-agent investigation'}
+              </button>
+            ) : (
+              <small className="selected-incident-hint">This incident is {selectedIncident.status === 'CLOSED' ? 'closed' : 'resolved'}. Its investigations stay available on the Investigations page.</small>
+            )}
           </div>
         ) : (
           <EmptyState description="Select an incident in the queue to see its details and launch the investigation." title="STEP 2 · Select an incident" />

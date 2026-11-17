@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, api } from '../api'
-import { activeIncidents } from '../features/incidents/activeIncidents'
+import { activeIncidents, resolvedIncidents } from '../features/incidents/activeIncidents'
 import type {
   HumanReviewDecision,
   Incident,
@@ -160,6 +160,18 @@ export function useIncidentFlow(activePage: string = 'overview') {
     }
   }, [])
 
+  /** The operator confirms the problem is fixed; the incident moves to the Resolved list. */
+  const resolveIncident = useCallback(async (incidentId: string) => {
+    try {
+      const resolved = await api.resolveIncident(incidentId)
+      setIncidents((items) => items.map((item) => item.id === resolved.id ? resolved : item))
+      setSelectedIncident((current) => current?.id === resolved.id ? resolved : current)
+      setStatusMessage(`Incident resolved: ${resolved.title}`)
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : 'Could not resolve the incident.')
+    }
+  }, [])
+
   /** Submit an operator-reviewed lesson for curated long-term memory indexing. */
   const confirmIncidentLesson = useCallback(async (data: IncidentLessonConfirmation) => {
     try {
@@ -262,6 +274,7 @@ export function useIncidentFlow(activePage: string = 'overview') {
 
   const metrics = useMemo(() => ({
     incidentCount: activeIncidents(incidents).length,
+    resolvedIncidentCount: resolvedIncidents(incidents).length,
     runningInvestigationCount: investigations.filter((item) => item.lifecycle === 'RUNNING').length,
     pendingApprovalCount: investigations.filter((item) => item.lifecycle === 'AWAITING_HUMAN_REVIEW').length,
   }), [incidents, investigations])
@@ -281,6 +294,7 @@ export function useIncidentFlow(activePage: string = 'overview') {
     readiness,
     refreshWorkspace,
     resolveHumanReview,
+    resolveIncident,
     selectedIncident,
     selectedInvestigation,
     setSelectedIncident,

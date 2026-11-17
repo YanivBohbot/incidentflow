@@ -175,6 +175,17 @@ class IncidentRepository:
 
         return self.to_domain(orm)
 
+    def resolve_incident(self, incident_id: UUID) -> Incident | None:
+        """Mark the incident RESOLVED; it then leaves the open queue and its counts."""
+        orm = self.session.get(IncidentORM, incident_id)
+        if orm is None:
+            return None
+        if orm.status is not IncidentStatus.RESOLVED:
+            orm.status = IncidentStatus.RESOLVED
+            self.session.commit()
+            self.session.refresh(orm)
+        return self.to_domain(orm)
+
     def delete_incident(
         self,
         incident_id: UUID,

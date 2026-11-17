@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api'
 import type { Investigation, TraceStep } from '../../api'
 
@@ -59,6 +59,12 @@ export function AgentTrace({ investigation, compact = false }: AgentTraceProps) 
   const [steps, setSteps] = useState<TraceStep[]>([])
   const [error, setError] = useState<string | null>(null)
   const isRunning = investigation.lifecycle === 'RUNNING'
+  const frame = useRef<HTMLDivElement>(null)
+
+  // While the agents work, keep the newest step in view inside the fixed-height frame.
+  useEffect(() => {
+    if (isRunning && frame.current) frame.current.scrollTop = frame.current.scrollHeight
+  }, [steps.length, isRunning])
 
   useEffect(() => {
     let isCurrent = true
@@ -86,6 +92,7 @@ export function AgentTrace({ investigation, compact = false }: AgentTraceProps) 
       )}
       {error && <p className="proposal-error" role="alert">{error}</p>}
       {steps.length === 0 && !error && <p className="muted-copy">{isRunning ? 'The supervisor is starting…' : 'No agent activity recorded for this investigation.'}</p>}
+      <div className="trace-frame" ref={frame}>
       <ol className="trace-list">
         {steps.map((step, index) => (
           <li className={`trace-step trace-${step.kind} trace-status-${step.status}`} key={index}>
@@ -104,6 +111,7 @@ export function AgentTrace({ investigation, compact = false }: AgentTraceProps) 
         ))}
         {isRunning && <li className="trace-step trace-running"><span aria-hidden="true" className="trace-icon trace-spinner" /><div className="trace-body"><strong>Agents are working…</strong></div></li>}
       </ol>
+      </div>
     </section>
   )
 }

@@ -25,6 +25,7 @@ function App() {
     <AppShell activePage={activePage} onCreateIncident={() => { setActivePage('incidents'); setIsCreateIncidentFormOpen(true) }} onPageChange={setActivePage} pendingApprovalCount={workspace.metrics.pendingApprovalCount} statusMessage={workspace.statusMessage}>
       <section className="metrics" aria-label="Workspace metrics">
         <MetricCard description="Recorded in this workspace" label="Open incidents" value={workspace.metrics.incidentCount} />
+        <MetricCard description="Fixed or closed" label="Resolved incidents" value={workspace.metrics.resolvedIncidentCount} />
         <MetricCard description="Currently processing evidence" label="Investigations running" value={workspace.metrics.runningInvestigationCount} />
         <MetricCard description="Explicit operator decisions needed" label="Pending approvals" value={workspace.metrics.pendingApprovalCount} />
       </section>
@@ -37,7 +38,7 @@ function App() {
           readiness={workspace.readiness}
         />}
         {activePage === 'incidents' && <IncidentsPage demoEnabled={workspace.demoEnabled} isDemoStarting={workspace.isDemoStarting} onAutoStartDemo={workspace.autoStartDemo} onRunDemo={workspace.startDemoRun} incidents={workspace.incidents} investigations={workspace.investigations} isCreateFormOpen={isCreateIncidentFormOpen} isStartingInvestigation={workspace.isStartingInvestigation} onCloseCreateForm={() => setIsCreateIncidentFormOpen(false)} onCreateIncident={workspace.createIncident} onSelectIncident={workspace.setSelectedIncident} onStartInvestigation={handleStartInvestigation} selectedIncident={workspace.selectedIncident} />}
-        {activePage === 'investigations' && <InvestigationsPage incidents={workspace.incidents} investigations={workspace.investigations} onConfirmLesson={workspace.confirmIncidentLesson} onSelectInvestigation={workspace.selectInvestigation} selectedInvestigation={workspace.selectedInvestigation} />}
+        {activePage === 'investigations' && <InvestigationsPage incidents={workspace.incidents} investigations={workspace.investigations} onConfirmLesson={workspace.confirmIncidentLesson} onResolveIncident={workspace.resolveIncident} onSelectInvestigation={workspace.selectInvestigation} selectedInvestigation={workspace.selectedInvestigation} />}
         {activePage === 'approvals' && <ApprovalsPage incidents={workspace.incidents} investigations={workspace.investigations} onResolve={workspace.resolveHumanReview} />}
       </>}
     </AppShell>

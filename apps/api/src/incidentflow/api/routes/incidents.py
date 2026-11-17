@@ -93,6 +93,15 @@ def update_incident(
     return incident
 
 
+@router.post("/{incident_id}/resolve", response_model=Incident, dependencies=CAN_OPERATE)
+def resolve_incident(incident_id: UUID, service: IncidentServiceDep) -> Incident:
+    """An operator confirms the problem is fixed; the incident leaves the open queue."""
+    incident = service.resolve_incident(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return incident
+
+
 @router.delete(
     "/{incident_id}",
     status_code=status.HTTP_204_NO_CONTENT,

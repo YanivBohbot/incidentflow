@@ -23,9 +23,18 @@ export type InvestigationEvidence = {
   source_status: string
 }
 
+export type CausalStep = {
+  label: string
+  detail: string
+  source: string
+  verified: boolean
+}
+
 export type InvestigationReport = {
   summary: string
   confidence: number
+  root_cause?: string | null
+  causal_chain?: CausalStep[]
   agents_consulted?: string[]
   evidence?: InvestigationEvidence[]
   hypotheses?: string[]
@@ -137,6 +146,8 @@ export const api = {
   listIncidents: () => request<Incident[]>('/incidents'),
   createIncident: (data: Pick<Incident, 'title' | 'description' | 'priority'>) =>
     request<Incident>('/incidents', { method: 'POST', body: JSON.stringify(data) }),
+  resolveIncident: (incidentId: string) =>
+    request<Incident>(`/incidents/${incidentId}/resolve`, { method: 'POST' }),
   startInvestigation: (incidentId: string, incidentRequest: string) =>
     request<Investigation>('/investigations', {
       method: 'POST',

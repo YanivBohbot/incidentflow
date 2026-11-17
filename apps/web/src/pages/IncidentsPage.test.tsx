@@ -40,6 +40,35 @@ describe('IncidentsPage queue', () => {
     expect(items[1]).toHaveTextContent('Not investigated')
   })
 
+  it('keeps flagging incidents that nobody has investigated yet', () => {
+    renderPage()
+
+    const items = within(screen.getByRole('list')).getAllByRole('listitem')
+    expect(items[0]).not.toHaveClass('needs-attention')
+    expect(items[1]).toHaveClass('needs-attention')
+    expect(items[2]).toHaveClass('needs-attention')
+  })
+
+  it('lists resolved and closed incidents under Resolved, without a launch button', async () => {
+    const withResolved = [
+      ...incidents,
+      { ...incident('done', 'Fixed login', 'HIGH', '2026-11-02T10:00:00Z'), status: 'RESOLVED' } as Incident,
+      { ...incident('old', 'Old checkout alarm', 'CRITICAL', '2026-11-02T09:00:00Z'), status: 'CLOSED' } as Incident,
+    ]
+    render(
+      <IncidentsPage incidents={withResolved} investigations={investigations} isCreateFormOpen={false} onCloseCreateForm={vi.fn()} onCreateIncident={vi.fn()} onSelectIncident={vi.fn()} onStartInvestigation={vi.fn()} selectedIncident={withResolved[3]} />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /^Resolved/ }))
+
+    const items = within(screen.getByRole('list')).getAllByRole('listitem')
+    expect(items.map((item) => item.querySelector('strong')?.textContent)).toEqual(['Fixed login', 'Old checkout alarm'])
+    expect(items[0]).toHaveTextContent('Resolved')
+    expect(items[1]).toHaveTextContent('Closed')
+    expect(items[0]).not.toHaveClass('needs-attention')
+    expect(screen.queryByRole('button', { name: 'Launch multi-agent investigation' })).toBeNull()
+  })
+
   it('hides closed and resolved incidents from the list and the counts', () => {
     const withClosed = [
       ...incidents,

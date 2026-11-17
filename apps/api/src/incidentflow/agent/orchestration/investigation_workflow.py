@@ -13,6 +13,7 @@ from incidentflow.agent.orchestration.fault_tolerance.retry_policies import (
     external_read_retry_policy,
 )
 from incidentflow.agent.orchestration.fault_tolerance.workflow_failures import handle_node_failure
+from incidentflow.agent.orchestration.policies.confidence import cap_confidence
 from incidentflow.agent.orchestration.policies.human_review import accepted_human_review
 from incidentflow.agent.orchestration.states.investigation import (
     InvestigationWorkflowInput,
@@ -65,7 +66,7 @@ async def investigate_with_supervisor(
 
 
 def capture_supervisor_report(state: InvestigationWorkflowState) -> dict:
-    """Copy the Supervisor's structured response into the investigation contract."""
+    """Copy the Supervisor's report into the investigation contract, with confidence capped."""
     report = state.get("structured_response")
     if report is None:
         return {
@@ -73,6 +74,7 @@ def capture_supervisor_report(state: InvestigationWorkflowState) -> dict:
             "human_review": None,
             "errors": ["The Supervisor completed without a structured report."],
         }
+    report = cap_confidence(report)
     return {"report": report, "human_review": accepted_human_review(report)}
 
 

@@ -6,3 +6,5 @@ const CLOSED_STATUSES = new Set(['CLOSED', 'RESOLVED'])
 export const isActiveIncident = (incident: Incident) => !CLOSED_STATUSES.has(incident.status)
 
 export const activeIncidents = (incidents: Incident[]) => incidents.filter(isActiveIncident)
+
+export const resolvedIncidents = (incidents: Incident[]) => incidents.filter((incident) => !isActiveIncident(incident))

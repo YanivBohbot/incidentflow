@@ -36,5 +36,8 @@ class IncidentService:
     ) -> Incident | None:
         return self.repository.update_incident(incident_id, data)
 
+    def resolve_incident(self, incident_id: UUID) -> Incident | None:
+        return self.repository.resolve_incident(incident_id)
+
     def delete_incident(self, incident_id: UUID) -> bool:
         return self.repository.delete_incident(incident_id)

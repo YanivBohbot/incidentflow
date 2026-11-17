@@ -17,9 +17,10 @@ from incidentflow.agent.findings.evidence import InvestigationEvidence
 from incidentflow.agent.findings.github import GitHubFinding
 from incidentflow.agent.findings.it_operations import ITOperationsFinding
 from incidentflow.agent.findings.knowledge import KnowledgeFinding
-from incidentflow.agent.findings.report import InvestigationReport
+from incidentflow.agent.findings.report import CausalStep, InvestigationReport
 
 __all__ = [
+    "CausalStep",
     "CloudWatchAlarm",
     "CloudWatchFinding",
     "CloudWatchLogEvent",
