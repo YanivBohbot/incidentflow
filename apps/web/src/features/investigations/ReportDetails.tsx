@@ -1,3 +1,4 @@
+/** Final investigation report: root cause, causal chain, next actions, evidence. */
 import { useState } from 'react'
 import type { CausalStep, InvestigationEvidence, InvestigationReport } from '../../api'
 

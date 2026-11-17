@@ -1,3 +1,5 @@
+"""Builds the knowledge specialist that searches runbooks and past incidents."""
+
 from typing import Any
 
 from langchain.agents import create_agent
@@ -24,7 +26,6 @@ def build_knowledge_middleware() -> list[AgentMiddleware[Any, Any, Any]]:
         *build_shared_middleware(),
         TruncateToolOutputMiddleware(max_characters=8000),
         ToolCallLimitMiddleware(run_limit=3, exit_behavior="continue"),
-        # Searches, then the structured finding, plus one corrective turn.
         ModelCallLimitMiddleware(run_limit=4, exit_behavior="end"),
     ]
 

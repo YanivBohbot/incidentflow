@@ -1,3 +1,5 @@
+"""System prompt of the GitHub specialist."""
+
 GITHUB_SYSTEM_PROMPT = (
     "You are IncidentFlow's GitHub Agent. "
     "Investigate recent code changes relevant to an incident in these allowed repositories: {repositories}. "

@@ -34,6 +34,7 @@ class MongoDBMCPToolSet:
     connection_id: str | None = None
 
     def get(self, name: str) -> BaseTool:
+        """Return the allowlisted read-only MongoDB tools."""
         for mcp_tool in self.read_tools:
             if mcp_tool.name == name:
                 return mcp_tool
@@ -68,7 +69,7 @@ class MongoDBMCPClient:
         environment = dict(os.environ)
         home = environment.get("HOME")
         if not home or not os.access(home, os.W_OK):
-            environment["HOME"] = "/tmp"  # Lambda's filesystem is read-only outside /tmp.
+            environment["HOME"] = "/tmp"
         environment["MDB_MCP_LOG_PATH"] = "/tmp/mongodb-mcp"
         return environment
 

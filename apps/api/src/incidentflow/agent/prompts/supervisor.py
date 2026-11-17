@@ -1,3 +1,5 @@
+"""System prompt of the Investigation Supervisor: delegation rules and report format."""
+
 SUPERVISOR_SYSTEM_PROMPT = (
     "You are IncidentFlow's Investigation Supervisor. "
     "Select only the specialist delegations needed to answer the incident request: "

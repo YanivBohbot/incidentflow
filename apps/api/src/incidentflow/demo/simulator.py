@@ -25,11 +25,8 @@ from incidentflow.demo.scenarios import METRIC_NAMESPACE, SCENARIOS, Scenario
 AlarmFired = Callable[[Scenario, str], None]
 
 PROJECT_TAG = {"Key": "project", "Value": "incidentflow"}
-# CloudWatch accepts datapoints up to 2 weeks old and 2 hours ahead; stay within the last minutes.
 WINDOW = timedelta(minutes=10)
-INCIDENT_MINUTES = 3  # matches the alarm's 3 evaluation periods of 60 s
-# Future-dated incident points keep the alarm breaching while later scenarios fire; CloudWatch
-# accepts datapoints up to 2 hours ahead and 1000 points per PutMetricData call.
+INCIDENT_MINUTES = 3
 HOLD_MINUTES = 10
 
 
@@ -42,6 +39,11 @@ def _utc_now() -> datetime:
 
 
 class DemoSimulator:
+    """Replay demo outages: put metrics and logs, then trip each scenario's alarm.
+
+    Alarms are tagged explicitly because PutMetricAlarm only applies tags on creation.
+    """
+
     def __init__(
         self,
         logs_client: Any,
@@ -62,6 +64,7 @@ class DemoSimulator:
         self._on_alarm_fired = on_alarm_fired
 
     def run(self, run_id: str) -> None:
+        """Fire every scenario in turn, one alarm per interval."""
         account = self._sts.get_caller_identity()["Account"]
         region = self._cloudwatch.meta.region_name
         for scenario in SCENARIOS:
@@ -96,8 +99,6 @@ class DemoSimulator:
         )
 
     def _tag_alarm(self, scenario: Scenario, arn: str) -> None:
-        # PutMetricAlarm only applies Tags when it creates the alarm; tag explicitly so an alarm
-        # that already exists (earlier run, seed scripts) still carries the incident tags.
         self._cloudwatch.tag_resource(ResourceARN=arn, Tags=_alarm_tags(scenario))
 
     def _set_state(self, scenario: Scenario, state: str, reason: str, run_id: str) -> None:
@@ -135,7 +136,6 @@ class DemoSimulator:
                 message = random.choice(scenario.incident_lines)
             events.append({"timestamp": int(moment.timestamp() * 1000), "message": message})
             moment += timedelta(seconds=30)
-        # The last tick lands on `now`; make sure at least one incident line is always present.
         events[-1]["message"] = scenario.incident_lines[0]
         events.sort(key=lambda event: event["timestamp"])
         self._logs.put_log_events(

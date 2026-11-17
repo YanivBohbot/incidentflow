@@ -1,3 +1,4 @@
+/** Approve, edit, or reject one paused investigation (Jira writes and report reviews). */
 import { useState } from 'react'
 import { AgentTrace } from '../investigations/AgentTrace'
 import type { HumanReview, HumanReviewDecision, Investigation } from '../../api'
@@ -42,11 +43,8 @@ function displayValue(value: unknown) {
 }
 
 /**
- * One paused investigation and the explicit operator decision that resumes it.
- *
- * Nothing is approved by default: the operator must click a decision. For a Jira write, only
- * the text fields listed by the backend can be edited; the target (site, project, issue) is
- * shown read-only.
+ * One paused investigation and the operator decision that resumes it. Nothing is approved by
+ * default; for a Jira write only the listed text fields are editable, the target is read-only.
  */
 export function HumanReviewPanel({ investigation, incidentTitle, onResolve }: HumanReviewPanelProps) {
   const review = investigation.human_review!

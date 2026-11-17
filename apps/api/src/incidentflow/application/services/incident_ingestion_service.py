@@ -1,3 +1,5 @@
+"""Turns CloudWatch alarm events into incidents, one open incident per alarm."""
+
 import logging
 from dataclasses import dataclass
 from enum import Enum
@@ -31,6 +33,8 @@ class AlarmTagReader(Protocol):
 
 
 class CloudWatchAlarmTagReader:
+    """Read the incident title, priority, and service from alarm tags."""
+
     def __init__(self, client: Any) -> None:
         self._client = client
 
@@ -47,11 +51,15 @@ class IngestionOutcome(str, Enum):
 
 @dataclass(frozen=True)
 class IngestionResult:
+    """Whether an alarm event created an incident, and which one."""
+
     outcome: IngestionOutcome
     incident: Incident | None
 
 
 class IncidentIngestionService:
+    """Create incidents from alarm state changes."""
+
     def __init__(
         self,
         repository: IncidentRepository,
@@ -63,6 +71,7 @@ class IncidentIngestionService:
         self._alarm_prefix = alarm_prefix
 
     def ingest_cloudwatch_alarm(self, event: dict[str, Any]) -> IngestionResult:
+        """Create an incident when a prefixed alarm enters ALARM; ignore other events."""
         detail = event.get("detail") or {}
         name = str(detail.get("alarmName") or "")
         state = detail.get("state") or {}

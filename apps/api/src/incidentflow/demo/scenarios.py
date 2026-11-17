@@ -10,6 +10,8 @@ JIRA_PROJECT = "SAM1"
 
 @dataclass(frozen=True)
 class Scenario:
+    """One demo outage: its alarm, metrics, log lines, and the incident it creates."""
+
     service: str
     alarm_name: str
     metric: str
@@ -228,7 +230,6 @@ SCENARIOS: tuple[Scenario, ...] = (
 
 DEMO_ALARM_NAMES: tuple[str, ...] = tuple(s.alarm_name for s in SCENARIOS)
 
-# Alarm names used before the short if-* names; teardown scripts still delete them.
 LEGACY_ALARM_NAMES: tuple[str, ...] = (
     *(f"incidentflow-demo-{s.service}" for s in SCENARIOS if s.service != "payment-service"),
     "incidentflow-demo-payment-5xx",

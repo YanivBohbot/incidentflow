@@ -1,3 +1,5 @@
+"""Knowledge tools: runbook search in Pinecone and simulated guides for development."""
+
 import json
 
 from langchain.tools import tool
@@ -52,8 +54,6 @@ def search_incident_response_guides(
     if document_id and not _is_evaluation_reference(document_id):
         metadata_filter["document_id"] = document_id
     elif document_id:
-        # Evaluation IDs describe an incident scenario, not a Pinecone document.
-        # Ignoring the incorrect filter preserves semantic retrieval by the query.
         ignored_document_id = document_id
     if source_kind:
         metadata_filter["source_kind"] = source_kind

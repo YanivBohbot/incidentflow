@@ -1,3 +1,5 @@
+"""Builds the read-only GitHub specialist that inspects recent code changes."""
+
 import re
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -97,6 +99,7 @@ class GitHubRepositoryAllowlistMiddleware(AgentMiddleware):
         request: ToolCallRequest,
         handler: Callable[[ToolCallRequest], ToolResult],
     ) -> ToolResult:
+        """Block calls to repositories outside the allowlist."""
         prepared = self._prepare(request)
         return prepared if isinstance(prepared, ToolMessage) else handler(prepared)
 
@@ -117,9 +120,6 @@ def build_github_middleware(
         *build_shared_middleware(),
         GitHubRepositoryAllowlistMiddleware(allowed_repositories, branch),
         TruncateToolOutputMiddleware(max_characters=6000),
-        # Per-tool limits only (1 + 1 + 1 + 2 = at most five reads). Do not add a global
-        # ToolCallLimitMiddleware as well: when both block the same call, each adds its own
-        # ToolMessage for one tool_call_id, and OpenAI rejects the conversation.
         *[
             ToolCallLimitMiddleware(tool_name=tool_name, run_limit=1, exit_behavior="continue")
             for tool_name in (
@@ -131,9 +131,6 @@ def build_github_middleware(
         ToolCallLimitMiddleware(
             tool_name="pull_request_read", run_limit=2, exit_behavior="continue"
         ),
-        # Reads in parallel, one or two follow-up reads, then GitHubFinding, plus room for
-        # one corrective turn. Live runs showed fewer turns could end the agent before it
-        # wrote its finding.
         ModelCallLimitMiddleware(run_limit=6, exit_behavior="end"),
     ]
 

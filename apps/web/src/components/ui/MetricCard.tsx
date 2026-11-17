@@ -1,3 +1,4 @@
+/** One headline number with its label, used in the metrics row. */
 type MetricCardProps = {
   label: string
   value: number

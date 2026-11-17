@@ -24,7 +24,6 @@ class InvestigationReportScenario:
     unsafe_actions: tuple[str, ...]
 
 
-# Each scenario mirrors a synthetic playbook in knowledge_sources/, so the correct answer is known.
 INVESTIGATION_REPORT_SCENARIOS = (
     InvestigationReportScenario(
         name="EVAL-PAY-001",

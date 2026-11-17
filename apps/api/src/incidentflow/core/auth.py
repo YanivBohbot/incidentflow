@@ -47,7 +47,6 @@ def jwks_url(issuer_url: str) -> str:
 
 @lru_cache
 def _cached_jwks_client(url: str) -> PyJWKClient:
-    # One client per issuer so the fetched key set is cached across requests.
     return PyJWKClient(url, cache_keys=True)
 
 
@@ -66,7 +65,6 @@ def verify_access_token(
     client_id = settings.oidc_client_id
     if not settings.oidc_issuer_url or not client_id:
         raise AuthenticationError("OIDC issuer and client id are not configured.")
-    # Cognito's iss has no trailing slash; tolerate one in the setting.
     issuer = settings.oidc_issuer_url.rstrip("/")
     client = jwks_client or _cached_jwks_client(jwks_url(issuer))
     try:

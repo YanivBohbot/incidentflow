@@ -1,3 +1,4 @@
+/** Root component: page navigation, workspace metrics, and the active page. */
 import { useState } from 'react'
 import { AppShell } from './components/layout/AppShell'
 import type { AppPage } from './components/layout/AppShell'
@@ -14,7 +15,7 @@ function App() {
   const workspace = useIncidentFlow(activePage)
 
   async function handleStartInvestigation() {
-    setActivePage('investigations') // watch the agents work while the workflow runs
+    setActivePage('investigations')
     const investigation = await workspace.startInvestigation()
     if (investigation) {
       setActivePage(investigation.lifecycle === 'AWAITING_HUMAN_REVIEW' ? 'approvals' : 'investigations')

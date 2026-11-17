@@ -1,3 +1,4 @@
+/** Incidents page: the open/resolved queue and the launch of an investigation. */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Incident, Investigation } from '../api'
 import { EmptyState } from '../components/ui/EmptyState'
@@ -53,10 +54,7 @@ type IncidentsPageProps = {
   onAutoStartDemo?: () => Promise<void>
 }
 
-/**
- * Two columns at the same height: the incident queue (step 1) on the left, and on the right
- * either the report form or the selected incident with its launch button (step 2).
- */
+/** Incident queue on the left; the report form or the selected incident on the right. */
 export function IncidentsPage({ incidents: allIncidents, investigations, selectedIncident, onCreateIncident, onSelectIncident, onStartInvestigation, isCreateFormOpen, isStartingInvestigation = false, onCloseCreateForm, demoEnabled = false, isDemoStarting = false, onRunDemo, onAutoStartDemo }: IncidentsPageProps) {
   const [queueView, setQueueView] = useState<'open' | 'resolved'>('open')
   const incidents = useMemo(() => activeIncidents(allIncidents), [allIncidents])
@@ -76,14 +74,12 @@ export function IncidentsPage({ incidents: allIncidents, investigations, selecte
     return () => { window.clearInterval(tick); pending.forEach((timer) => window.clearTimeout(timer)) }
   }, [])
 
-  // The page is mounted once per visit, so the ref gives "once per visit" across re-renders.
   useEffect(() => {
     if (!demoEnabled || autoStarted.current) return
     autoStarted.current = true
     void onAutoStartDemo?.()
   }, [demoEnabled, onAutoStartDemo])
 
-  // Mark incidents missing from the previous list (never on the first render) for 4 s.
   useEffect(() => {
     const ids = new Set(incidents.map((item) => item.id))
     const previous = previousIds.current
@@ -113,7 +109,6 @@ export function IncidentsPage({ incidents: allIncidents, investigations, selecte
   const countFor = (severity: SeverityFilter) => severity === 'ALL' ? shownIncidents.length : shownIncidents.filter((incident) => incident.priority === severity).length
   const visibleIncidents = shownIncidents
     .filter((incident) => severityFilter === 'ALL' || incident.priority === severityFilter)
-    // Open: most urgent first. Resolved: most recently resolved first.
     .sort(queueView === 'open' ? bySeverityThenDate : (left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))
 
   return (
@@ -155,7 +150,6 @@ export function IncidentsPage({ incidents: allIncidents, investigations, selecte
                 <li className={[
                   selectedIncident?.id === incident.id && 'is-selected',
                   newIds.has(incident.id) && 'is-new',
-                  // Blinks until someone launches an investigation, so open alarms are not missed.
                   !latest && isActiveIncident(incident) && 'needs-attention',
                 ].filter(Boolean).join(' ')} key={incident.id}>
                   <button onClick={() => { onCloseCreateForm(); onSelectIncident(incident) }} type="button">

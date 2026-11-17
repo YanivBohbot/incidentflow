@@ -1,3 +1,5 @@
+"""API contracts of the demo endpoints."""
+
 from pydantic import BaseModel
 
 

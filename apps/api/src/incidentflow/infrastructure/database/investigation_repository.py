@@ -1,3 +1,8 @@
+"""Database access for investigations, including job leases.
+
+A paused review counts as active work, so it blocks a second start on the incident.
+"""
+
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -19,10 +24,8 @@ from incidentflow.infrastructure.database.models import InvestigationORM
 RUNNING = InvestigationLifecycle.RUNNING
 PENDING = InvestigationLifecycle.PENDING
 AWAITING_HUMAN_REVIEW = InvestigationLifecycle.AWAITING_HUMAN_REVIEW
-# A paused review resumes into PENDING, so it blocks a new start just like queued or running work.
 START_BLOCKING_LIFECYCLES = (PENDING, RUNNING, AWAITING_HUMAN_REVIEW)
 ACTIVE_INVESTIGATION_INDEX = "uq_investigations_active_incident"
-# SQLite names the indexed column instead of the partial index.
 _SQLITE_ACTIVE_INVESTIGATION_CONFLICT = "UNIQUE constraint failed: investigations.incident_id"
 
 
@@ -40,7 +43,6 @@ def _lease_expired(now: datetime):
 def _database_now(session: Session) -> datetime:
     """The database clock, shared by every API and worker instance, as an aware UTC time."""
     now = session.execute(select(func.now(type_=DateTime(timezone=True)))).scalar_one()
-    # SQLite returns a naive CURRENT_TIMESTAMP, which is UTC.
     return now.replace(tzinfo=UTC) if now.tzinfo is None else now.astimezone(UTC)
 
 
@@ -55,6 +57,8 @@ class ClaimedInvestigation:
 
 
 class InvestigationRepository:
+    """Read and write investigations and their job leases."""
+
     def __init__(self, session: Session) -> None:
         self.session = session
 
@@ -147,7 +151,6 @@ class InvestigationRepository:
         try:
             self.session.commit()
         except IntegrityError:
-            # e.g. uq_investigations_active_incident: the incident already has an active row.
             self.session.rollback()
             raise
 
@@ -208,6 +211,7 @@ class InvestigationRepository:
         lease_seconds: int,
         now: datetime | None = None,
     ) -> bool:
+        """Extend the lease while the worker still owns the job."""
         now = now or _database_now(self.session)
         return (
             self._apply(
@@ -222,6 +226,7 @@ class InvestigationRepository:
     def complete_investigation(
         self, investigation_id: UUID, report: InvestigationReport, *, lease_token: str
     ) -> Investigation | None:
+        """Store the report and mark the run COMPLETED."""
         return self._apply(
             investigation_id,
             InvestigationORM.lifecycle == RUNNING,
@@ -260,6 +265,7 @@ class InvestigationRepository:
     def fail_investigation(
         self, investigation_id: UUID, error_message: str, *, lease_token: str
     ) -> Investigation | None:
+        """Mark the run FAILED with its error message."""
         return self._apply(
             investigation_id,
             InvestigationORM.lifecycle == RUNNING,

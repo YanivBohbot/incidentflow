@@ -1,3 +1,4 @@
+/** Save a confirmed root cause and fix as a lesson for future investigations. */
 import { useState } from 'react'
 import type { Incident, IncidentLesson, IncidentLessonConfirmation, Investigation } from '../../api'
 
@@ -10,7 +11,6 @@ type ConfirmedLessonFormProps = {
 
 /** Collect only the reviewed lesson that may enter long-term incident memory. */
 export function ConfirmedLessonForm({ investigation, incident, onConfirm }: ConfirmedLessonFormProps) {
-  // Prefilled from the report as a starting point; the operator corrects it before confirming.
   const suggestedResolution = investigation.report?.proposed_actions?.[0]
   const [service, setService] = useState(incident?.service ?? '')
   const [environment, setEnvironment] = useState('production')

@@ -1,3 +1,4 @@
+/** Overview page: system boundaries and live operating state. */
 import type { Incident, Investigation, OperationalMetrics, Readiness } from '../api'
 
 type OverviewPageProps = {
@@ -25,7 +26,6 @@ const capabilities = [
 /** Show the implemented system boundaries alongside live, non-sensitive operating state. */
 export function OverviewPage({ incidents, investigations, metrics, operationalMetrics, readiness }: OverviewPageProps) {
   const latestInvestigations = investigations.slice(0, 4)
-  // Count persisted investigations; the operational metrics counter restarts with the API.
   const completedCount = investigations.filter((item) => item.lifecycle === 'COMPLETED').length
   const requestCount = Object.values(operationalMetrics.requests_by_status).reduce((total, count) => total + count, 0)
 

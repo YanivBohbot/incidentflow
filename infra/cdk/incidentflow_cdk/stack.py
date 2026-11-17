@@ -37,16 +37,11 @@ from incidentflow_cdk.names import (
 )
 
 WORKER_TIMEOUT = Duration.seconds(900)
-# Persist a run that hits its deadline as FAILED before Lambda kills the process at 900 s.
 JOB_TIMEOUT_SECONDS = "780"
-# The demo simulator owns alarms with this prefix (also the ingestion default).
 DEMO_ALARM_PREFIX = "if-"
 BUDGET_USD = 10
 BUDGET_THRESHOLDS = (50, 80, 100)
 
-# Viewer-request rewrite for the dashboard: client-side routes (no file extension) get the
-# single-page app; real files (assets, favicon) pass through. Only the S3 behavior uses it, so
-# API errors are never replaced by HTML.
 SPA_REWRITE_CODE = """\
 function handler(event) {
   var request = event.request;
@@ -84,6 +79,7 @@ class IntegrationSettings:
 
 
 class IncidentFlowStack(Stack):
+    """AWS stack: API, worker, sweeper, demo and ingestion Lambdas, queue, web hosting."""
     def __init__(
         self,
         scope: Construct,
@@ -96,7 +92,6 @@ class IncidentFlowStack(Stack):
         **kwargs: Any,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
-        # Owned by GithubDeployStack; looked up by name to avoid a cross-stack export.
         self._repository = ecr.Repository.from_repository_name(self, "Repository", REPOSITORY_NAME)
         self._image_tag = image_tag
 
@@ -113,7 +108,6 @@ class IncidentFlowStack(Stack):
             enforce_ssl=True,
             dead_letter_queue=sqs.DeadLetterQueue(max_receive_count=3, queue=dead_letters),
         )
-        # Matches py-key-value's DynamoDBStore table layout (it never creates the table here).
         token_table = dynamodb.Table(
             self,
             "JiraTokenTable",
@@ -131,7 +125,6 @@ class IncidentFlowStack(Stack):
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
             encryption=s3.BucketEncryption.S3_MANAGED,
             enforce_ssl=True,
-            # `cdk destroy` needs the bucket emptied first (no auto-delete custom resource).
             removal_policy=RemovalPolicy.DESTROY,
         )
         http_api = apigwv2.HttpApi(self, "HttpApi", description="IncidentFlow API")
@@ -217,8 +210,6 @@ class IncidentFlowStack(Stack):
                 resources=[token_table.table_arn],
             )
         )
-        # What the three approved CloudWatch MCP tools call: get_active_alarms,
-        # get_metric_data and execute_log_insights_query. Read-only; metrics have no ARN.
         worker.add_to_role_policy(
             iam.PolicyStatement(
                 actions=[
@@ -312,7 +303,6 @@ class IncidentFlowStack(Stack):
             memory_size=512,
             environment={"DEMO_INTERVAL_SECONDS": "8"},
         )
-        # One run at a time, never retried: a retry would replay the whole outage story.
         cfn_function = demo.node.default_child
         assert isinstance(cfn_function, lambda_.CfnFunction)
         cfn_function.reserved_concurrent_executions = 1
@@ -336,7 +326,6 @@ class IncidentFlowStack(Stack):
                 resources=[demo_group, f"{demo_group}:*"],
             )
         )
-        # Metrics have no ARN; the namespace condition is the scope.
         demo.add_to_role_policy(
             iam.PolicyStatement(
                 actions=["cloudwatch:PutMetricData"],
@@ -391,8 +380,6 @@ class IncidentFlowStack(Stack):
                 ],
             ),
             additional_behaviors={
-                # API Gateway expects its own Host header; every other header (Authorization
-                # included) and the query string are forwarded, and nothing is cached.
                 "/api/*": cloudfront.BehaviorOptions(
                     origin=api_origin,
                     viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
@@ -462,7 +449,6 @@ class IncidentFlowStack(Stack):
     ) -> lambda_.DockerImageFunction:
         tag = f"{image}-{self._image_tag}"
         if handler is None:
-            # The api image's CMD runs uvicorn behind the Lambda Web Adapter extension.
             code = lambda_.DockerImageCode.from_ecr(self._repository, tag_or_digest=tag)
             logging: dict[str, Any] = {}
         else:
@@ -472,7 +458,6 @@ class IncidentFlowStack(Stack):
                 entrypoint=_JOBS_ENTRYPOINT,
                 cmd=[f"incidentflow.lambda_handlers.{handler}"],
             )
-            # awslambdaric emits JSON records and sets the root logger from this level.
             logging = {
                 "logging_format": lambda_.LoggingFormat.JSON,
                 "application_log_level_v2": lambda_.ApplicationLogLevel.INFO,
@@ -494,9 +479,7 @@ class IncidentFlowStack(Stack):
             memory_size=memory_size,
             log_group=log_group,
             environment={
-                # Lambda's filesystem is read-only outside /tmp.
                 "HOME": "/tmp",
-                # Secrets are read from these SSM SecureStrings at cold start, never set here.
                 "INCIDENTFLOW_SSM_PATH": SSM_PATH,
                 "DATABASE_NULL_POOL": "true",
                 **environment,
@@ -509,7 +492,6 @@ class IncidentFlowStack(Stack):
                 resources=[f"arn:aws:ssm:{self.region}:{self.account}:parameter/incidentflow*"],
             )
         )
-        # SecureStrings use the AWS-managed `aws/ssm` key, reachable only through SSM.
         function.add_to_role_policy(
             iam.PolicyStatement(
                 actions=["kms:Decrypt"],

@@ -1,3 +1,4 @@
+/** Typed client for the IncidentFlow API and the shapes it returns. */
 export type Incident = {
   id: string
   title: string

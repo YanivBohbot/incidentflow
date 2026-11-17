@@ -1,3 +1,4 @@
+/** Investigations page: history, live trace, and report of each investigation. */
 import type { Incident, IncidentLesson, IncidentLessonConfirmation, Investigation } from '../api'
 import { EmptyState } from '../components/ui/EmptyState'
 import { AgentTrace } from '../features/investigations/AgentTrace'

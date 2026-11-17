@@ -133,6 +133,7 @@ class CloudWatchReadOnlyPolicyMiddleware(AgentMiddleware):
         request: ToolCallRequest,
         handler: Callable[[ToolCallRequest], ToolResult],
     ) -> ToolResult:
+        """Reject calls outside the approved read-only tools."""
         rejection = self._rejection(request)
         if rejection is not None:
             return rejection
@@ -162,9 +163,6 @@ def build_cloudwatch_middleware(
     return [
         *build_shared_middleware(),
         CloudWatchReadOnlyPolicyMiddleware(allowed_log_groups),
-        # One alarm read, up to three metric reads, and one Logs Insights query. Per-tool
-        # limits only: a global limiter blocking the same call would add a second
-        # ToolMessage for one tool_call_id, which OpenAI rejects.
         ToolCallLimitMiddleware(
             tool_name="get_active_alarms", run_limit=1, exit_behavior="continue"
         ),
@@ -172,8 +170,6 @@ def build_cloudwatch_middleware(
         ToolCallLimitMiddleware(
             tool_name="execute_log_insights_query", run_limit=1, exit_behavior="continue"
         ),
-        # Alarms, metrics, logs, then the structured finding: four model turns, plus one
-        # corrective turn. A malformed MCP reply then ends the run instead of looping.
         ModelCallLimitMiddleware(run_limit=5, exit_behavior="end"),
     ]
 

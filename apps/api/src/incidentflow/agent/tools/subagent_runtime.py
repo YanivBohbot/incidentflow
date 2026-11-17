@@ -1,10 +1,11 @@
-"""Runtime configuration shared by every subagent delegation tool."""
+"""Runtime configuration shared by every subagent delegation tool.
+
+ModelCallLimitMiddleware bounds each subagent; the recursion ceiling here only has to let
+those turns finish while still stopping a runaway loop.
+"""
 
 from langchain_core.runnables import RunnableConfig
 
-# Each agent turn runs several graph steps: the model, the tools, and one node per middleware
-# hook. ModelCallLimitMiddleware is what bounds a subagent (four or five turns); this ceiling
-# only has to be high enough for those turns to finish, and still stops a runaway loop.
 SUBAGENT_RECURSION_LIMIT = 60
 
 

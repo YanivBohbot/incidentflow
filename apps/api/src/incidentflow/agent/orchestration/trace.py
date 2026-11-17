@@ -168,7 +168,7 @@ def _subagent_call_steps(messages: list[Any]) -> list[InvestigationTraceStep]:
         actor = identity.display_name if identity else (message.name or "Specialist agent")
         for call in message.tool_calls:
             if call["name"].endswith("Finding"):
-                continue  # the structured-output tool, shown as the finding itself
+                continue
             result = results.get(call["id"])
             failed = result is not None and result.status == "error"
             steps.append(
@@ -258,15 +258,13 @@ def build_investigation_trace(
             if agent_runs:
                 steps += _subagent_call_steps(agent_runs.pop(0))
             if message.name == "ask_it_operations" and jira_reviews:
-                steps += jira_reviews  # the Jira write paused inside this delegation
+                steps += jira_reviews
                 jira_reviews = []
             steps.append(_finding_step(message))
 
-    # A specialist still running or paused (no finding yet): show what it has done so far.
     for agent_runs in runs_by_agent.values():
         for run in agent_runs:
             steps += _subagent_call_steps(run)
-    # ToolStrategy may retry the structured report after a validation error: show the last one.
     report_positions = [index for index, step in enumerate(steps) if step.kind == "report"]
     for index in reversed(report_positions[:-1]):
         del steps[index]

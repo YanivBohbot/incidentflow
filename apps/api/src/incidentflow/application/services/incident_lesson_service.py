@@ -23,6 +23,7 @@ class IncidentLessonService:
         self._indexer = indexer
 
     def confirm_and_index(self, confirmation: IncidentLessonConfirmation) -> IncidentLesson:
+        """Save the operator's confirmed lesson and index it in Pinecone for future investigations."""
         lesson = self._repository.create_pending(confirmation)
         try:
             vector_id = self._indexer.index_confirmed_incident_lesson(lesson)

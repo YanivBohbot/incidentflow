@@ -1,3 +1,4 @@
+/** Live timeline of what the supervisor and each specialist did. */
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api'
 import type { Investigation, TraceStep } from '../../api'
@@ -50,18 +51,13 @@ function StepData({ step }: { step: TraceStep }) {
   )
 }
 
-/**
- * Timeline of one investigation: the request, every supervisor delegation, each specialist
- * finding, human-in-the-loop pauses and decisions, then the final report. It refreshes while
- * the investigation is running so the operator can watch the agents work.
- */
+/** Timeline of one investigation, refreshed while it runs and auto-scrolled to the newest step. */
 export function AgentTrace({ investigation, compact = false }: AgentTraceProps) {
   const [steps, setSteps] = useState<TraceStep[]>([])
   const [error, setError] = useState<string | null>(null)
   const isRunning = investigation.lifecycle === 'RUNNING'
   const frame = useRef<HTMLDivElement>(null)
 
-  // While the agents work, keep the newest step in view inside the fixed-height frame.
   useEffect(() => {
     if (isRunning && frame.current) frame.current.scrollTop = frame.current.scrollHeight
   }, [steps.length, isRunning])

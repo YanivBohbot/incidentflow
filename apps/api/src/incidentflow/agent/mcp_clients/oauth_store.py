@@ -57,7 +57,6 @@ class RefreshingOAuth(OAuth):
                 try:
                     await self._discover_authorization_server_metadata()
                 except (httpx2.HTTPError, OAuthFlowError) as error:
-                    # The SDK's fallback then runs and, when it fails, so does the fail-fast.
                     logger.warning("OAuth metadata discovery failed: %s", type(error).__name__)
         return await super()._refresh_token()
 
@@ -90,8 +89,6 @@ class RefreshingOAuth(OAuth):
                     return
                 if metadata is None:
                     continue
-                # On the legacy (no resource metadata) path a root issuer with its trailing
-                # slash names the same origin, exactly as the SDK allows.
                 if self.context.auth_server_url is None and issuers_match(
                     str(metadata.issuer), expected_issuer
                 ):
@@ -155,7 +152,5 @@ def _dynamodb_store(table: str, region: str) -> AsyncKeyValue:
     from key_value.aio.stores.dynamodb import DynamoDBStore
 
     with warnings.catch_warnings():
-        # The library flags DynamoDBStore as an unstable API on every construction.
         warnings.filterwarnings("ignore", message="A configured store is unstable")
-        # The table is owned by the infrastructure stack, so never create it here.
         return DynamoDBStore(table_name=table, region_name=region, auto_create=False)

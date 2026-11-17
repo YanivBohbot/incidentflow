@@ -26,7 +26,6 @@ from incidentflow.infrastructure.database.investigation_repository import (
 
 logger = logging.getLogger(__name__)
 
-# One local run at a time per process: overlapping runs would redefine the same alarms.
 _LOCAL_RUN_LOCK = threading.Lock()
 
 
@@ -152,6 +151,8 @@ def _utc_now() -> datetime:
 
 
 class DemoService:
+    """Start demo runs, closing the incidents left by the previous run."""
+
     def __init__(
         self,
         repository: IncidentRepository,
@@ -170,7 +171,7 @@ class DemoService:
         self._now = now
 
     def start_run(self, only_if_idle: bool = False) -> DemoRunStarted:
-        # Even a manual run waits for the current run: it would close the incidents being created.
+        """Start a run unless one is in progress, or, for an automatic start, the demo is busy."""
         if self._run_in_progress_now():
             return DemoRunStarted(started=False)
         if only_if_idle and (self._recently_active() or self._under_investigation()):

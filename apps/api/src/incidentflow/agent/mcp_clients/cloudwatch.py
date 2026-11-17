@@ -6,6 +6,9 @@ The server exposes 19 tools. IncidentFlow uses only three, always called by appl
 1. get_active_alarms: which alarms are firing.
 2. get_metric_data: the datapoints of the metric an alarm watches.
 3. execute_log_insights_query: error lines in the allowlisted log groups.
+
+Only the variables the server needs reach its subprocess, so application secrets never
+do, and the AWS profile and region are pinned there so a tool call cannot switch identity.
 """
 
 import json
@@ -24,8 +27,6 @@ CLOUDWATCH_READ_TOOL_NAMES: tuple[str, ...] = (
     "get_metric_data",
     "execute_log_insights_query",
 )
-# Only what the server needs to start and find AWS credentials reaches the subprocess, so
-# OPENAI_API_KEY, DATABASE_URL, and other application secrets never do.
 _INHERITED_ENVIRONMENT = (
     "PATH",
     "PATHEXT",
@@ -59,8 +60,6 @@ def check_read_only_policy(
     """Raise CloudWatchPolicyError unless the call stays inside IncidentFlow's read-only scope."""
     if tool_name not in CLOUDWATCH_READ_TOOL_NAMES:
         raise CloudWatchPolicyError(f"CloudWatch MCP tool is not approved: {tool_name}")
-    # The server accepts a profile and a region on every tool, which could switch the call to an
-    # administrator identity. Both are pinned through the subprocess environment instead.
     if "profile_name" in arguments or "region" in arguments:
         raise CloudWatchPolicyError("CloudWatch MCP calls may not override the AWS profile.")
     if tool_name == "execute_log_insights_query":
@@ -76,7 +75,7 @@ def check_read_only_policy(
 def parse_json_result(result: Any) -> Any:
     """Return the JSON document carried by an MCP tool result."""
     content = getattr(result, "content", result)
-    if isinstance(content, list):  # MCP text content blocks
+    if isinstance(content, list):
         content = "".join(
             block.get("text", "") if isinstance(block, dict) else getattr(block, "text", "")
             for block in content
@@ -97,6 +96,7 @@ class CloudWatchSession:
         self.allowed_log_groups = allowed_log_groups
 
     async def read(self, tool_name: str, arguments: dict[str, Any]) -> Any:
+        """Call one approved CloudWatch tool and return its text result."""
         check_read_only_policy(tool_name, arguments, self.allowed_log_groups)
         return parse_json_result(await self.tools[tool_name].ainvoke(arguments))
 
@@ -113,7 +113,6 @@ class CloudWatchMCPClient:
         aws_profile: str | None = None,
         allowed_log_groups: tuple[str, ...] = (),
     ) -> None:
-        # A server installed directly (as in the Docker image) needs no launcher arguments.
         if not command:
             raise ValueError("CloudWatch MCP requires a stdio command.")
         self.command = command
@@ -143,8 +142,6 @@ class CloudWatchMCPClient:
     async def open_read_session(self) -> AsyncIterator[CloudWatchSession]:
         """Keep the MCP process alive while the three approved reads run."""
         async with MCPAdapter(self._client()) as adapter:
-            # adapter.list_tools() is LangChain's MCPAdapter method: it asks the server for its
-            # 19 tools. Keep only the three approved ones.
             approved = {
                 tool.name: tool
                 for tool in await adapter.list_tools()

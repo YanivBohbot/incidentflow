@@ -1,3 +1,4 @@
+/** Page frame: sidebar navigation, page title, and status message. */
 import type { ReactNode } from 'react'
 
 export type AppPage = 'overview' | 'incidents' | 'investigations' | 'approvals'

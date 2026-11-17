@@ -67,7 +67,6 @@ async def ask_it_operations(incident_context: str, config: RunnableConfig) -> st
             finding_json = await _investigate_incident_with_jira(incident_context, config)
             return finding_json
         except GraphInterrupt:
-            # Let LangGraph persist and bubble a pending Jira tool approval.
             raise
         except Exception as error:
             authorization_error = _authorization_error(error)

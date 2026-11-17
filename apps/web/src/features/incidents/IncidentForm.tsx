@@ -1,3 +1,4 @@
+/** Form an operator uses to report an incident by hand. */
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Incident } from '../../api'

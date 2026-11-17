@@ -1,3 +1,5 @@
+"""Investigation use cases: queue runs, resume after human review, read traces."""
+
 import logging
 from typing import Any
 from uuid import UUID
@@ -34,6 +36,8 @@ class InvestigationAlreadyActiveError(Exception):
 
 
 class InvestigationService:
+    """Queue investigations, resume them after review, and rebuild their trace."""
+
     def __init__(
         self,
         repository: InvestigationRepository,
@@ -47,6 +51,7 @@ class InvestigationService:
         self.workflow = workflow
 
     def start_investigation(self, data: InvestigationStart) -> Investigation | None:
+        """Queue an investigation as PENDING, or refuse when the incident already has one active."""
         incident = self.incident_repository.get_incident(data.incident_id)
         if incident is None:
             return None
@@ -61,8 +66,6 @@ class InvestigationService:
                 )
             )
         except IntegrityError as error:
-            # Another API instance inserted an active row after the check above; the unique
-            # index uq_investigations_active_incident rejected this one.
             if not is_active_investigation_conflict(error):
                 raise
             raise self._already_active(incident.id) from error
@@ -101,8 +104,6 @@ class InvestigationService:
         review = investigation.human_review
         command_resume = decision.model_dump(mode="json")
         if review and review.review_type is HumanReviewType.JIRA_WRITE:
-            # Raises HumanReviewEditError before any write, so a rejected edit leaves the
-            # investigation paused and the operator can correct it.
             command_resume = jira_tool_resume_payload(decision, review)
         payload = {
             "command_resume": command_resume,
@@ -116,8 +117,6 @@ class InvestigationService:
         try:
             resumed = self.repository.request_resume(investigation_id, payload)
         except IntegrityError as error:
-            # Legacy state: another row on this incident started during the review. The
-            # rollback leaves this one paused, without the stored decision.
             if not is_active_investigation_conflict(error):
                 raise
             raise self._already_active(
@@ -145,8 +144,6 @@ class InvestigationService:
         config = {"configurable": {"thread_id": investigation.workflow_thread_id}}
         snapshot = await self.workflow.aget_state(config)
         values = dict(snapshot.values or {})
-        # While the supervisor runs or a Jira write is paused, the investigate node has not
-        # returned: the supervisor's messages so far live in its own subgraph checkpoint.
         supervisor_messages, subagent_runs = await self._latest_agent_messages(config)
         if len(supervisor_messages) > len(values.get("messages", [])):
             values["messages"] = supervisor_messages
@@ -167,7 +164,7 @@ class InvestigationService:
         if checkpointer is None or not hasattr(checkpointer, "alist"):
             return [], []
         latest: dict[str, Any] = {}
-        async for checkpoint in checkpointer.alist(config):  # newest first
+        async for checkpoint in checkpointer.alist(config):
             namespace = checkpoint.config["configurable"].get("checkpoint_ns", "")
             if namespace.startswith("investigate:") and namespace not in latest:
                 latest[namespace] = checkpoint

@@ -1,3 +1,5 @@
+"""Incident endpoints: create, list, edit, resolve, and delete incidents."""
+
 from collections.abc import Iterator
 from typing import Annotated
 from uuid import UUID
@@ -21,6 +23,7 @@ from incidentflow.infrastructure.database.session import SessionLocal
 
 
 def get_db_session() -> Iterator[Session]:
+    """Open one database session per request."""
     with SessionLocal() as session:
         yield session
 
@@ -50,6 +53,7 @@ def create_incident(
     data: IncidentCreate,
     service: IncidentServiceDep,
 ) -> Incident:
+    """Record an incident reported by an operator."""
     return service.create_incident(data)
 
 
@@ -57,6 +61,7 @@ def create_incident(
 def list_incidents(
     service: IncidentServiceDep,
 ) -> list[Incident]:
+    """Return every incident, open and closed."""
     return service.list_incidents()
 
 
@@ -65,6 +70,7 @@ def get_incident(
     incident_id: UUID,
     service: IncidentServiceDep,
 ) -> Incident:
+    """Return one incident or 404."""
     incident = service.get_incident(incident_id)
 
     if incident is None:
@@ -82,6 +88,7 @@ def update_incident(
     data: IncidentUpdate,
     service: IncidentServiceDep,
 ) -> Incident:
+    """Edit the title, description, or priority of an incident."""
     incident = service.update_incident(incident_id, data)
 
     if incident is None:
@@ -111,6 +118,7 @@ def delete_incident(
     incident_id: UUID,
     service: IncidentServiceDep,
 ) -> None:
+    """Delete an incident."""
     deleted = service.delete_incident(incident_id)
 
     if not deleted:

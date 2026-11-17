@@ -1,3 +1,5 @@
+"""Investigation endpoints: start, follow, resume after human review, and save lessons."""
+
 from collections.abc import Iterator
 from typing import Annotated
 from uuid import UUID
@@ -154,7 +156,7 @@ def resolve_human_review(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=ALREADY_ACTIVE_DETAIL
         ) from error
-    except ValueError as error:  # an edit outside the permitted Jira fields
+    except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
         ) from error

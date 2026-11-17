@@ -107,7 +107,7 @@ def collect_reads(messages: list[BaseMessage]) -> tuple[list[str], list[str], in
         call = calls[message.tool_call_id]
         reference = _reference(call["name"], call.get("args", {}))
         if reference is None:
-            continue  # the structured-output tool, not a CloudWatch read
+            continue
         content = unwrap_external_evidence(message.content)
         if message.status == "error":
             errors.append(content.replace(" failed: ", ": ", 1))
@@ -167,7 +167,6 @@ async def _investigate(
         incident_context, service_name, window, ", ".join(settings.cloudwatch_mcp_allowed_log_groups)
     )
     try:
-        # One time budget covers server start-up and the whole agent run.
         async with asyncio.timeout(settings.cloudwatch_mcp_timeout_seconds):
             async with _create_cloudwatch_mcp_client().open_read_session() as session:
                 agent = build_cloudwatch_agent(list(session.tools.values()))
@@ -195,7 +194,6 @@ async def _investigate(
         )
     finding = result.get("structured_response")
     if signals == 0 or finding is None:
-        # Nothing firing, or the agent stopped before answering: never invent a cause.
         return CloudWatchFinding(
             **facts,
             summary=(

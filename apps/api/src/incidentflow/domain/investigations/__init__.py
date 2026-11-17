@@ -1,3 +1,5 @@
+"""Investigation API contracts."""
+
 from incidentflow.domain.investigations.models import (
     Investigation,
     InvestigationCreate,

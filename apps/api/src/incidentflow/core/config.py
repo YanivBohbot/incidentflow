@@ -1,3 +1,5 @@
+"""Application settings read from environment variables and apps/api/.env."""
+
 import os
 from functools import lru_cache
 from typing import Literal
@@ -11,8 +13,6 @@ class Settings(BaseSettings):
     environment: str = "development"
     api_prefix: str = "/api"
     auth_enabled: bool = False
-    # Cognito user pool issuer (https://cognito-idp.<region>.amazonaws.com/<userPoolId>) and the
-    # app client id that access tokens must carry; both are required when auth is enabled.
     oidc_issuer_url: str | None = None
     oidc_client_id: str | None = None
     openai_api_key: SecretStr
@@ -29,7 +29,6 @@ class Settings(BaseSettings):
     mcp_oauth_token_store_dir: str | None = None
     mcp_oauth_dynamodb_table: str | None = None
     mcp_oauth_storage_encryption_key: str | None = None
-    # Only the authorization script should open a browser; services fail fast without tokens.
     mcp_oauth_interactive: bool = False
     github_mcp_transport: Literal["http", "stdio"] = "stdio"
     github_mcp_url: str | None = None
@@ -40,7 +39,6 @@ class Settings(BaseSettings):
     )
     github_mcp_enabled: bool = False
     github_mcp_repositories: str = ""
-    # Optional branch to investigate instead of the default branch (for example the demo branch).
     github_mcp_branch: str | None = None
     github_personal_access_token: str | None = None
     cloudwatch_mcp_enabled: bool = False
@@ -48,7 +46,6 @@ class Settings(BaseSettings):
     cloudwatch_mcp_command_args: str = "tool,run,--from,awslabs.cloudwatch-mcp-server@0.3.1," + (
         "awslabs.cloudwatch-mcp-server.exe" if os.name == "nt" else "awslabs.cloudwatch-mcp-server"
     )
-    # Leave the profile empty in AWS deployments so the server uses the attached IAM role.
     cloudwatch_mcp_aws_profile: str | None = None
     cloudwatch_mcp_aws_region: str = "us-east-1"
     cloudwatch_mcp_timeout_seconds: float = 90
@@ -73,25 +70,18 @@ class Settings(BaseSettings):
     pinecone_top_k: int = 3
     pinecone_candidate_k: int = 8
     pinecone_min_score: float = 0.2
-    # PostgreSQL
     database_url: str
     langgraph_checkpoint_database_url: str | None = None
-    # Serverless Postgres (Neon): no client-side pooling, bounded connect time.
     database_null_pool: bool = False
     database_connect_timeout_seconds: int = 15
-    # Investigation job queue (SQS; ElasticMQ locally via SQS_ENDPOINT_URL)
     job_queue_url: str = "http://localhost:9324/000000000000/incidentflow-investigations"
     sqs_endpoint_url: str | None = None
     job_queue_region: str | None = None
     worker_concurrency: int = 2
     job_lease_seconds: int = 300
     job_max_attempts: int = 3
-    # Deadline for one workflow run; the default fits AWS Lambda's 15-minute cap.
     job_timeout_seconds: float = 900
-    # CloudWatch alarms whose names start with this prefix are ingested as incidents.
     ingest_alarm_prefix: str = "if-"
-    # The demo replays outages through real CloudWatch alarms. With a function name the API
-    # invokes that Lambda; without one it runs the simulator itself using the demo AWS profile.
     demo_enabled: bool = False
     demo_function_name: str | None = None
     demo_interval_seconds: float = 8.0
@@ -176,6 +166,7 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    """Return the cached settings; tests clear the cache after changing env vars."""
     settings = Settings()
     if settings.langsmith_tracing and settings.langsmith_api_key:
         os.environ["LANGSMITH_TRACING"] = "true"

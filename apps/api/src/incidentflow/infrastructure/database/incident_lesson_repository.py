@@ -1,3 +1,5 @@
+"""Database access for confirmed incident lessons."""
+
 from datetime import UTC, datetime
 from uuid import UUID
 

@@ -24,10 +24,8 @@ async def _setup_checkpointer(database_url: str) -> None:
 
 def run_migrations() -> None:
     """Apply ``alembic upgrade head``, then create or upgrade the checkpoint tables."""
-    # The image's WORKDIR (/app) and apps/api locally both hold alembic.ini and alembic/.
     config = Config(os.environ.get("ALEMBIC_CONFIG", DEFAULT_ALEMBIC_CONFIG))
     command.upgrade(config, "head")
-    # psycopg's async driver cannot run on Windows' default ProactorEventLoop.
     loop_factory = asyncio.SelectorEventLoop if sys.platform == "win32" else None
     asyncio.run(
         _setup_checkpointer(get_settings().checkpoint_database_url), loop_factory=loop_factory

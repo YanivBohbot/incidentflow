@@ -1,3 +1,9 @@
+"""SQS job queue (ElasticMQ locally).
+
+Dummy credentials are passed to this client only: exported AWS_* keys would leak into
+the CloudWatch MCP subprocess and override its AWS_PROFILE.
+"""
+
 import json
 import logging
 from typing import Any
@@ -53,13 +59,11 @@ class SqsJobQueue:
         )
 
 
-# ElasticMQ ignores signatures but boto3 still needs credentials to sign. They are passed to
-# this client only, never exported: process-wide AWS_* keys would leak into the CloudWatch MCP
-# subprocess and override its AWS_PROFILE.
 LOCAL_QUEUE_CREDENTIALS = {"aws_access_key_id": "local", "aws_secret_access_key": "local"}
 
 
 def build_job_queue(settings: Settings) -> JobQueue:
+    """Return the SQS queue when configured, otherwise an in-memory one."""
     endpoint_url = settings.sqs_endpoint_url or None
     credentials = LOCAL_QUEUE_CREDENTIALS if endpoint_url else {}
     client = boto3.client(

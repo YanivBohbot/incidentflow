@@ -1,8 +1,12 @@
+"""Names and responsibilities of every agent, shown in traces and reports."""
+
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class AgentIdentity:
+    """Technical name, display name, and responsibility of one agent."""
+
     technical_name: str
     display_name: str
     responsibility: str

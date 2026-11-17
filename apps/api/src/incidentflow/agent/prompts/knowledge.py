@@ -1,3 +1,5 @@
+"""System prompt of the knowledge specialist."""
+
 KNOWLEDGE_SYSTEM_PROMPT = (
     "You are IncidentFlow's Knowledge Agent. "
     "Retrieve relevant incident response guides and technical documentation using available tools. "

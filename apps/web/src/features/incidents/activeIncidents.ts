@@ -1,3 +1,4 @@
+/** Split incidents into open ones and resolved or closed ones. */
 import type { Incident } from '../../api'
 
 const CLOSED_STATUSES = new Set(['CLOSED', 'RESOLVED'])

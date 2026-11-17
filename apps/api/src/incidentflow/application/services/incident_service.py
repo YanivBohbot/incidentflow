@@ -1,3 +1,5 @@
+"""Incident use cases called by the API routes."""
+
 from uuid import UUID
 
 from incidentflow.domain.incidents.models import (
@@ -11,6 +13,8 @@ from incidentflow.infrastructure.database.incident_repository import (
 
 
 class IncidentService:
+    """Create, read, edit, resolve, and delete incidents."""
+
     def __init__(self, repository: IncidentRepository) -> None:
         self.repository = repository
 
@@ -37,6 +41,7 @@ class IncidentService:
         return self.repository.update_incident(incident_id, data)
 
     def resolve_incident(self, incident_id: UUID) -> Incident | None:
+        """Mark an incident resolved once the operator confirms the fix."""
         return self.repository.resolve_incident(incident_id)
 
     def delete_incident(self, incident_id: UUID) -> bool:

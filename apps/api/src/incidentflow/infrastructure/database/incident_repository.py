@@ -1,3 +1,5 @@
+"""Database access for incidents."""
+
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID
@@ -22,6 +24,8 @@ class DuplicateOpenIncidentError(Exception):
 
 
 class IncidentRepository:
+    """Read and write incidents; timestamps are always stored in UTC."""
+
     def __init__(self, session: Session) -> None:
         self.session = session
 
@@ -79,6 +83,7 @@ class IncidentRepository:
         return self.to_domain(orm)
 
     def close_open_alarm_incidents(self, alarm_names: Sequence[str]) -> int:
+        """Close the open incidents of the given alarms."""
         if not alarm_names:
             return 0
 
@@ -116,6 +121,7 @@ class IncidentRepository:
         ]
 
     def latest_alarm_incident_created_at(self, alarm_names: Sequence[str]) -> datetime | None:
+        """Return when the newest incident of the given alarms was created."""
         if not alarm_names:
             return None
 
@@ -133,7 +139,6 @@ class IncidentRepository:
             return None
 
         latest = max(matching)
-        # SQLite drops the timezone; the column always stores UTC.
         return latest if latest.tzinfo else latest.replace(tzinfo=UTC)
 
     def get_incident(

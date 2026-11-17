@@ -1,3 +1,5 @@
+"""Builds the Investigation Supervisor that delegates to specialists and writes the report."""
+
 from typing import Any
 
 from langchain.agents import create_agent
@@ -57,8 +59,6 @@ def build_supervisor_middleware(
             on_failure="continue",
         ),
         *build_shared_middleware(),
-        # "continue" blocks only the extra call and tells the supervisor, which must still
-        # return its InvestigationReport. "end" would stop the agent without any report.
         *[
             ToolCallLimitMiddleware(tool_name=tool_name, run_limit=2, exit_behavior="continue")
             for tool_name in (
@@ -73,6 +73,11 @@ def build_supervisor_middleware(
 
 
 def build_investigation_supervisor():
+    """Create the supervisor agent with its five delegation tools and safety middleware.
+
+    Extra calls are blocked with "continue" so the supervisor still returns a report,
+    and ToolStrategy sends schema errors back so it can fix an incomplete report.
+    """
     settings = get_settings()
 
     model = ChatOpenAI(
@@ -93,7 +98,5 @@ def build_investigation_supervisor():
         system_prompt=SUPERVISOR_SYSTEM_PROMPT,
         name=INVESTIGATION_SUPERVISOR.technical_name,
         middleware=build_supervisor_middleware(model),
-        # ToolStrategy returns schema-validation feedback to the supervisor so it can
-        # correct an incomplete report instead of failing the full investigation.
         response_format=ToolStrategy(InvestigationReport),
     )

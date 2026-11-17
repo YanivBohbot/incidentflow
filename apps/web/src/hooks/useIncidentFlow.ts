@@ -1,3 +1,4 @@
+/** Dashboard state and actions, kept in sync with the API by polling. */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, api } from '../api'
 import { activeIncidents, resolvedIncidents } from '../features/incidents/activeIncidents'
@@ -35,6 +36,7 @@ function mergeInvestigations(current: Investigation[], incoming: Investigation[]
   return [...local.filter((item) => !known.has(item.id)), ...merged]
 }
 
+/** Workspace state: polls incidents and investigations (faster on Incidents and during a run). */
 export function useIncidentFlow(activePage: string = 'overview') {
   const refreshMs = activePage === 'incidents' ? INCIDENTS_PAGE_REFRESH_MS : WORKSPACE_REFRESH_MS
   const [incidents, setIncidents] = useState<Incident[]>([])
@@ -50,11 +52,9 @@ export function useIncidentFlow(activePage: string = 'overview') {
   const [isLoading, setIsLoading] = useState(true)
   const [demoEnabled, setDemoEnabled] = useState(false)
   const [isDemoStarting, setIsDemoStarting] = useState(false)
-  // The ref blocks a second start before React re-renders; the state disables the button.
   const startInFlight = useRef(false)
   const [isStartingInvestigation, setIsStartingInvestigation] = useState(false)
 
-  // Rows added locally (just queued) that an in-flight list response may predate.
   const localRows = useRef(new Map<string, Investigation>())
   const applyList = useCallback((items: Investigation[]) => {
     const local = [...localRows.current.values()]
@@ -108,8 +108,6 @@ export function useIncidentFlow(activePage: string = 'overview') {
   }, [])
 
   useEffect(() => {
-    // Investigations can pause from anywhere (another tab, the API, a script) and alarm
-    // incidents arrive on their own: refresh regularly, faster while the queue is on screen.
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') void refreshWorkspace().catch(() => undefined)
     }, refreshMs)
@@ -144,7 +142,6 @@ export function useIncidentFlow(activePage: string = 'overview') {
       const run = await api.startDemoRun(true)
       if (run.started) await refreshWorkspace().catch(() => undefined)
     } catch {
-      // A viewer gets 403 here; nothing to show. The Run demo button reports real errors.
     }
   }, [refreshWorkspace])
 
@@ -190,8 +187,6 @@ export function useIncidentFlow(activePage: string = 'overview') {
     setIsStartingInvestigation(true)
     setStatusMessage('Queueing the investigation…')
     try {
-      // The API answers 202 with a PENDING investigation; a worker runs it, and polling
-      // (below) follows it through RUNNING to its final or paused state.
       const investigation = await api.startInvestigation(selectedIncident.id, selectedIncident.description)
       setSelectedInvestigation(investigation)
       localRows.current.set(investigation.id, investigation)
@@ -232,7 +227,6 @@ export function useIncidentFlow(activePage: string = 'overview') {
     }
   }, [refreshWorkspace])
 
-  // Keep the selected investigation in step with the polled list.
   useEffect(() => {
     setSelectedInvestigation((current) => {
       const fresh = current && investigations.find((item) => item.id === current.id)
@@ -240,7 +234,6 @@ export function useIncidentFlow(activePage: string = 'overview') {
     })
   }, [investigations])
 
-  // Announce lifecycle transitions of the selected investigation once, not on every poll.
   const lastSeen = useRef<{ id: string, lifecycle: string } | null>(null)
   useEffect(() => {
     const previous = lastSeen.current
@@ -253,7 +246,6 @@ export function useIncidentFlow(activePage: string = 'overview') {
     if (message) setStatusMessage(message)
   }, [selectedInvestigation])
 
-  // Faster feedback while the selected investigation is queued or running.
   const activeId = selectedInvestigation
     && (selectedInvestigation.lifecycle === 'PENDING' || selectedInvestigation.lifecycle === 'RUNNING')
     ? selectedInvestigation.id : null

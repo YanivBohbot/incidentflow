@@ -1,3 +1,5 @@
+"""FastAPI application: routers, CORS, and the investigation workflow at startup."""
+
 import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -33,6 +35,7 @@ def create_app(
     ),
     job_queue_factory: Callable[[Settings], JobQueue] = build_job_queue,
 ) -> FastAPI:
+    """Build the API; checkpoint tables are created by the migrate job, not here."""
     settings = get_settings()
     if settings.auth_enabled and not (settings.oidc_issuer_url and settings.oidc_client_id):
         raise RuntimeError("AUTH_ENABLED=true requires OIDC_ISSUER_URL and OIDC_CLIENT_ID.")
@@ -40,7 +43,6 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        # Checkpoint tables are created by `python -m incidentflow.migrate`, not per instance.
         async with checkpointer_context_factory(settings.checkpoint_database_url) as checkpointer:
             app.state.job_queue = job_queue_factory(settings)
             supervisor = build_investigation_supervisor()
@@ -101,6 +103,5 @@ def create_app(
     return app
 
 
-# On AWS the api Lambda (uvicorn behind Lambda Web Adapter) reads its secrets from SSM first.
 load_ssm_secrets_if_configured()
 app = create_app()

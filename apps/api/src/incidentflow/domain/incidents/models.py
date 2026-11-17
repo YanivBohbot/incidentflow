@@ -1,3 +1,5 @@
+"""API contracts and enums for incidents."""
+
 from datetime import UTC, datetime
 from enum import Enum
 from uuid import UUID, uuid4

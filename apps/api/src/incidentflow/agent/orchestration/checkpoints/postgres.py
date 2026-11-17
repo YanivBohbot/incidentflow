@@ -1,14 +1,14 @@
-"""Asynchronous PostgreSQL checkpoint persistence for LangGraph workflows."""
+"""Asynchronous PostgreSQL checkpoint persistence for LangGraph workflows.
+
+Uses a small pool rather than one connection: Neon suspends idle compute and Lambda
+freezes, so a cached connection is often dead; the pool checks and replaces it.
+"""
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-# A pool, not one long-lived connection: Neon suspends idle compute and Lambda freezes warm
-# environments, so a cached connection is often dead on the next use. The pool checks each
-# connection before handing it out and replaces broken ones.
 CHECKPOINT_POOL_MAX_SIZE = 5
-# Hold no idle connections (they would keep Neon awake) and close spare ones quickly.
 CHECKPOINT_POOL_MIN_SIZE = 0
 CHECKPOINT_POOL_MAX_IDLE_SECONDS = 60.0
 
@@ -35,7 +35,6 @@ async def _open_postgres_saver(database_url: str) -> AsyncIterator[Any]:
         max_size=CHECKPOINT_POOL_MAX_SIZE,
         max_idle=CHECKPOINT_POOL_MAX_IDLE_SECONDS,
         check=AsyncConnectionPool.check_connection,
-        # The settings AsyncPostgresSaver.from_conn_string uses; setup() needs autocommit.
         kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
         open=False,
     )

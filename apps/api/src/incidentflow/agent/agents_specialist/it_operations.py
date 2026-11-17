@@ -1,3 +1,5 @@
+"""Builds the Jira specialist; Jira writes pause for operator approval first."""
+
 from langchain.agents import create_agent
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 from langchain.agents.structured_output import ToolStrategy
@@ -43,7 +45,5 @@ def build_it_operations_agent(jira_tools: list[BaseTool]):
             ),
             *build_shared_middleware(),
         ],
-        # ToolStrategy returns validation errors to the model so it can correct its answer,
-        # like the other specialists; native structured output fails on malformed JSON.
         response_format=ToolStrategy(ITOperationsFinding),
     )

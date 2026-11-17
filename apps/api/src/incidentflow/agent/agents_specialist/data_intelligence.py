@@ -1,3 +1,5 @@
+"""Builds the MongoDB data-intelligence specialist that reads operational events."""
+
 from typing import Any
 
 from langchain.agents import create_agent
@@ -37,10 +39,6 @@ def build_data_intelligence_middleware() -> list[AgentMiddleware[Any, Any, Any]]
             run_limit=1,
             exit_behavior="continue",
         ),
-        # Schema discovery, one evidence query, interpretation, and the
-        # structured response should fit in five model turns.  The explicit
-        # ceiling makes a malformed MCP reply fail safely instead of consuming
-        # the graph recursion budget in a retry loop.
         ModelCallLimitMiddleware(run_limit=5, exit_behavior="end"),
     ]
 

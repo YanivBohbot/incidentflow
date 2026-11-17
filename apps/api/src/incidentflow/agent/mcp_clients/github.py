@@ -1,4 +1,8 @@
-"""Least-privilege client for a GitHub MCP server."""
+"""Least-privilege client for a GitHub MCP server.
+
+The X-MCP-Readonly header removes every write tool on the server side, on top of the
+read-tool allowlist.
+"""
 
 import os
 from collections.abc import AsyncIterator, Sequence
@@ -35,6 +39,7 @@ class GitHubMCPToolSet:
     read_tools: list[BaseTool]
 
     def get(self, name: str) -> BaseTool:
+        """Return the allowlisted read-only GitHub tools."""
         for mcp_tool in self.read_tools:
             if mcp_tool.name == name:
                 return mcp_tool
@@ -81,8 +86,6 @@ class GitHubMCPClient:
             return Client(StdioTransport(self.command, command_args, env=environment))
         if self.server_url:
             if self.personal_access_token:
-                # GitHub's remote MCP server accepts a PAT; X-MCP-Readonly removes every write
-                # tool on the server side, in addition to the read-tool allowlist below.
                 return Client(
                     StreamableHttpTransport(
                         self.server_url,

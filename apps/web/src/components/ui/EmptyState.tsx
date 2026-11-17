@@ -1,3 +1,4 @@
+/** Placeholder shown when a list or panel has nothing to display. */
 import type { ReactNode } from 'react'
 
 type EmptyStateProps = {

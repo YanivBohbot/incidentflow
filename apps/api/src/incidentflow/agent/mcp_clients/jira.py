@@ -1,4 +1,8 @@
-"""Least-privilege client for the official Jira Cloud MCP server."""
+"""Least-privilege client for the official Jira Cloud MCP server.
+
+Tool schemas are normalised for OpenAI strict mode, which rejects required names whose
+properties were removed.
+"""
 
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
@@ -19,7 +23,6 @@ from incidentflow.agent.mcp_clients.oauth_store import (
     close_oauth_token_storage,
 )
 
-# Fixed so the redirect URI registered with Atlassian stays the same between authorizations.
 JIRA_OAUTH_CALLBACK_PORT = 8765
 
 JIRA_READ_TOOL_NAMES = (
@@ -53,6 +56,7 @@ class JiraMCPToolSet:
     write_tools: list[BaseTool]
 
     def get(self, name: str) -> BaseTool:
+        """Return the allowlisted Jira read and write tools."""
         for tool in (*self.read_tools, *self.write_tools):
             if tool.name == name:
                 return tool
@@ -203,8 +207,6 @@ def _openai_compatible_schema(schema: object) -> object:
                 properties.pop(name)
 
     if isinstance(properties, dict):
-        # OpenAI strict tool schemas require every remaining property and reject
-        # required names whose properties were removed during normalisation.
         normalized["required"] = list(properties)
     return normalized
 

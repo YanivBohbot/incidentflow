@@ -30,7 +30,6 @@ class GithubDeployStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs: Any) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        # CI pushes `api-<sha>` and `jobs-<sha>` here before the application stack deploys.
         repository = ecr.Repository(
             self,
             "Repository",
@@ -41,7 +40,6 @@ class GithubDeployStack(Stack):
                 ecr.LifecycleRule(description="Keep the last 10 images", max_image_count=10)
             ],
         )
-        # The functions live in another stack, which cannot add a policy to this repository.
         repository.add_to_resource_policy(
             iam.PolicyStatement(
                 sid="LambdaPull",
@@ -81,7 +79,6 @@ class GithubDeployStack(Stack):
     def _grant_deploy(self, role: iam.Role, repository: ecr.Repository) -> None:
         account, region = self.account, self.region
         bucket = web_bucket_name(account)
-        # `cdk deploy` does the CloudFormation work through the bootstrap roles.
         role.add_to_policy(
             iam.PolicyStatement(
                 actions=["sts:AssumeRole"],
@@ -107,8 +104,6 @@ class GithubDeployStack(Stack):
                 resources=[f"arn:aws:s3:::{bucket}/*"],
             )
         )
-        # The distribution id is generated, so invalidation is scoped to the account's
-        # distributions; the owner's account holds only this one.
         role.add_to_policy(
             iam.PolicyStatement(
                 actions=["cloudfront:CreateInvalidation", "cloudfront:GetInvalidation"],

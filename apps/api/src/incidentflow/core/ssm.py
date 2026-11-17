@@ -3,7 +3,6 @@
 import os
 from typing import Any
 
-# Set on AWS (by CDK) to the parameter path holding the secrets, e.g. ``/incidentflow``.
 SSM_PATH_ENV = "INCIDENTFLOW_SSM_PATH"
 
 

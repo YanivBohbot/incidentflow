@@ -76,7 +76,6 @@ async def run_worker(
         try:
             outcome = await processor.process(job.investigation_id, keep_alive=keep_alive)
         except Exception:
-            # Not acked: the queue redelivers the message, and the dead-letter queue catches it.
             logger.exception("Investigation job %s crashed.", job.investigation_id)
             return
         logger.info("Investigation job %s finished: %s.", job.investigation_id, outcome.value)
@@ -127,9 +126,6 @@ async def run_worker(
                 in_flight.add(task)
                 task.add_done_callback(in_flight.discard)
     finally:
-        # Graceful stop drains in-flight jobs. If the process is killed mid-drain, those jobs are
-        # abandoned mid-run and messages fetched by a cancelled receive stay invisible until their
-        # visibility timeout; recovery relies on lease expiry, the sweeper, and SQS redelivery.
         if in_flight:
             await asyncio.gather(*list(in_flight), return_exceptions=True)
 
@@ -137,6 +133,7 @@ async def run_worker(
 def build_processor(
     settings: Settings, session_factory: Callable[[], Session], workflow: Any
 ) -> InvestigationJobProcessor:
+    """Build the job processor with its repository, queue, and workflow."""
     return InvestigationJobProcessor(
         session_factory,
         workflow,
@@ -147,6 +144,7 @@ def build_processor(
 
 
 async def main() -> None:
+    """Entry point of `python -m incidentflow.worker`."""
     settings = get_settings()
     session_factory = get_session_factory()
     queue = build_job_queue(settings)
@@ -155,10 +153,9 @@ async def main() -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
             loop.add_signal_handler(sig, stop.set)
-        except NotImplementedError:  # Windows: KeyboardInterrupt is handled by the caller.
+        except NotImplementedError:
             pass
 
-    # Checkpoint tables are created by `python -m incidentflow.migrate`, not per worker.
     async with open_postgres_checkpointer(settings.checkpoint_database_url) as checkpointer:
         workflow: Any = build_investigation_workflow(
             build_investigation_supervisor(), checkpointer=checkpointer
@@ -185,8 +182,11 @@ async def main() -> None:
 
 
 def run() -> None:
+    """Receive and process jobs until stopped, then drain the in-flight ones.
+
+    Jobs abandoned by a kill are recovered by lease expiry, the sweeper, and SQS redelivery.
+    """
     logging.basicConfig(level=logging.INFO)
-    # psycopg's async driver cannot run on Windows' default ProactorEventLoop.
     loop_factory = asyncio.SelectorEventLoop if sys.platform == "win32" else None
     with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(main(), loop_factory=loop_factory)

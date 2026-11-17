@@ -1,3 +1,5 @@
+"""Wraps tool output as untrusted evidence so models never follow it as instructions."""
+
 from langchain.messages import ToolMessage
 
 EVIDENCE_START = "--- BEGIN EXTERNAL EVIDENCE ---"

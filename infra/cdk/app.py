@@ -33,9 +33,7 @@ GithubDeployStack(app, "IncidentFlowGithubDeploy", env=env)
 IncidentFlowStack(
     app,
     "IncidentFlow",
-    # The functions run the images CI pushed for this commit; there is no default tag.
     image_tag=_context("imageTag"),
-    # Supplied at deploy time (e.g. from a GitHub secret); never committed.
     budget_email=app.node.try_get_context("budgetEmail") or None,
     integration_settings=IntegrationSettings(
         github_repositories=_context("githubRepositories"),

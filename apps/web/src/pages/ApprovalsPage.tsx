@@ -1,3 +1,4 @@
+/** Approvals page: investigations waiting for an operator decision. */
 import type { HumanReviewDecision, Incident, Investigation } from '../api'
 import { EmptyState } from '../components/ui/EmptyState'
 import { HumanReviewPanel } from '../features/approvals/HumanReviewPanel'

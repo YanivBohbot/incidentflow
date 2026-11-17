@@ -37,6 +37,4 @@ class InvestigationWorkflowState(InvestigationWorkflowInput, InvestigationWorkfl
     is_valid_request: bool
     messages: Annotated[list[AnyMessage], add_messages]
     structured_response: InvestigationReport | None
-    # One entry per resolved human review ({"review": ..., "decision": ...}). The service adds
-    # it when it resumes the thread, so the trace can show every pause and its decision.
     review_events: Annotated[list[dict[str, Any]], operator.add]

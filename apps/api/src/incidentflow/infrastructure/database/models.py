@@ -1,3 +1,9 @@
+"""SQLAlchemy ORM tables.
+
+Unique partial indexes allow one active investigation per incident and one open
+incident per alarm, even across API instances.
+"""
+
 from datetime import datetime
 from uuid import UUID, uuid4
 
@@ -14,7 +20,6 @@ from incidentflow.domain.investigations.models import InvestigationLifecycle
 from incidentflow.domain.memory.models import IncidentLessonState
 from incidentflow.infrastructure.database.base import Base
 
-# At most one PENDING/RUNNING investigation per incident, even across API instances.
 ACTIVE_INVESTIGATION_PREDICATE = "lifecycle IN ('PENDING', 'RUNNING')"
 
 OPEN_STATUSES = (
@@ -22,7 +27,6 @@ OPEN_STATUSES = (
     IncidentStatus.INVESTIGATING,
     IncidentStatus.PENDING_APPROVAL,
 )
-# At most one open incident per (source, external_id), e.g. one per CloudWatch alarm ARN.
 OPEN_INCIDENT_PREDICATE = (
     "external_id IS NOT NULL AND status IN "
     "(" + ", ".join(f"'{status.value}'" for status in OPEN_STATUSES) + ")"

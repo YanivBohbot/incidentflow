@@ -1,3 +1,5 @@
+"""System prompt of the Jira (IT operations) specialist."""
+
 IT_OPERATIONS_SYSTEM_PROMPT = (
     "You are IncidentFlow's IT Operations Agent. "
     "Investigate IT incidents using available tools. "

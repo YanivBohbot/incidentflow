@@ -1,3 +1,5 @@
+"""Database engine and sessions; prepared statements are off for pooled Neon."""
+
 from collections.abc import Iterator
 from functools import lru_cache
 from typing import Any
@@ -18,7 +20,6 @@ def get_session_factory() -> sessionmaker[Session]:
     if settings.database_null_pool:
         options["poolclass"] = NullPool
     if make_url(settings.database_url).get_backend_name() == "postgresql":
-        # prepare_threshold=None disables prepared statements, which pooled Neon rejects.
         options["connect_args"] = {
             "connect_timeout": settings.database_connect_timeout_seconds,
             "prepare_threshold": None,
@@ -33,5 +34,6 @@ def SessionLocal() -> Session:
 
 
 def get_db_session() -> Iterator[Session]:
+    """Yield one database session and close it afterwards."""
     with SessionLocal() as session:
         yield session

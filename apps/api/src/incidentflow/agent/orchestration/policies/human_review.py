@@ -1,4 +1,8 @@
-"""Rules for report reviews and tool-level Jira approval payloads."""
+"""Rules for report reviews and tool-level Jira approval payloads.
+
+The operator may edit only the text of a Jira write; its target (site, project, issue
+type, issue key) stays exactly what was reviewed.
+"""
 
 from typing import Any
 
@@ -9,8 +13,6 @@ from incidentflow.domain.human_review.models import (
     HumanReviewType,
 )
 
-# Only the text of a Jira write may be edited by the operator. The target (site, project,
-# issue type, issue key) stays exactly what the agent proposed and the operator reviewed.
 JIRA_EDITABLE_FIELDS: dict[str, tuple[str, ...]] = {
     "createJiraIssue": ("summary", "description"),
     "addOrEditJiraIssueComment": ("commentBody",),

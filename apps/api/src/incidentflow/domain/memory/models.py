@@ -1,3 +1,5 @@
+"""API contracts of confirmed incident lessons (long-term memory)."""
+
 from datetime import datetime
 from enum import Enum
 from uuid import UUID, uuid4

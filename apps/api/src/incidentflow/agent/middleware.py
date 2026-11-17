@@ -1,3 +1,5 @@
+"""Middleware shared by every agent: evidence boundary and output truncation."""
+
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -19,6 +21,7 @@ class ExternalEvidenceBoundaryMiddleware(AgentMiddleware):
         request: ToolCallRequest,
         handler: Callable[[ToolCallRequest], ToolResult],
     ) -> ToolResult:
+        """Mark the tool result as external evidence."""
         return self._guard_result(request, handler(request))
 
     async def awrap_tool_call(
@@ -56,6 +59,7 @@ class TruncateToolOutputMiddleware(AgentMiddleware):
         request: ToolCallRequest,
         handler: Callable[[ToolCallRequest], ToolResult],
     ) -> ToolResult:
+        """Cut long tool results to the size limit."""
         return self._truncate(handler(request))
 
     async def awrap_tool_call(
@@ -71,6 +75,4 @@ def build_shared_middleware() -> list[AgentMiddleware[Any, Any, Any]]:
 
     The external-evidence boundary applies to every specialist tool result.
     """
-    # PII redaction remains deliberately disabled until IncidentFlow has a
-    # field-level data-classification policy for requests and tool payloads.
     return [ExternalEvidenceBoundaryMiddleware()]

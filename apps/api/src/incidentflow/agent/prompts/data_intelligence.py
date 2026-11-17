@@ -1,3 +1,5 @@
+"""System prompt of the MongoDB data-intelligence specialist."""
+
 DATA_INTELLIGENCE_SYSTEM_PROMPT = (
     "You are IncidentFlow's Data Intelligence Agent. "
     "Investigate technical events using the approved read-only MongoDB MCP tools. "

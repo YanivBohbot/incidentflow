@@ -74,6 +74,7 @@ JIRA_TOKEN_STORE_REQUIRED_MESSAGE = (
 
 
 def workflow_builder(checkpointer: Any) -> Any:
+    """Build the investigation workflow for a Lambda invocation."""
     return build_investigation_workflow(build_investigation_supervisor(), checkpointer=checkpointer)
 
 
@@ -132,7 +133,6 @@ def _event_loop() -> asyncio.AbstractEventLoop:
     """Return the environment's persistent loop; ``asyncio.run`` would close it after each call."""
     global _loop
     if _loop is None or _loop.is_closed():
-        # psycopg's async driver cannot run on Windows' default ProactorEventLoop (local tests).
         _loop = asyncio.SelectorEventLoop() if sys.platform == "win32" else asyncio.new_event_loop()
     return _loop
 
@@ -192,7 +192,6 @@ async def _process_job(runtime: _WorkerRuntime, job: ReceivedJob) -> bool:
     try:
         outcome = await runtime.processor.process(investigation_id, keep_alive=keep_alive)
     except Exception:
-        # Reported as a batch item failure: SQS redelivers and the dead-letter queue catches it.
         logger.exception("Investigation job %s crashed.", investigation_id)
         return False
     logger.info("Investigation job %s finished: %s.", investigation_id, outcome.value)
@@ -217,7 +216,6 @@ async def _process_records(records: list[Any]) -> list[dict[str, str]]:
     for record in records:
         parsed = _parse_record(record)
         if parsed is None:
-            # Redelivering a malformed message can never succeed; let Lambda delete it.
             message_id = record.get("messageId") if isinstance(record, dict) else None
             logger.warning("Dropping malformed job queue message %s.", message_id)
             continue
@@ -226,8 +224,6 @@ async def _process_records(records: list[Any]) -> list[dict[str, str]]:
             _worker_runtime = await _open_worker_runtime()
         if not await _process_job(_worker_runtime, job):
             failures.append({"itemIdentifier": message_id})
-            # The crash may come from a broken resource (e.g. a dead database connection), so
-            # the redelivery must not reuse this runtime.
             await _discard_worker_runtime()
     return failures
 

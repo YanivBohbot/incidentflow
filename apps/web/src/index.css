@@ -171,7 +171,6 @@ code {
   background: var(--code-bg);
 }
 
-/* IncidentFlow application design system */
 :root { --if-ink:#172033; --if-muted:#64748b; --if-canvas:#f6f8fc; --if-surface:#fff; --if-border:#e2e8f0; --if-panel:#0f1d35; --if-panel-muted:#a8b6cf; --if-primary:#0f766e; --if-primary-hover:#0b5e58; --if-shadow:0 16px 40px rgba(15,31,54,.08); background:var(--if-canvas); color:var(--if-ink); font:16px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
 body { background:var(--if-canvas); color:var(--if-ink); }
 #root { border:0; display:block; margin:0; max-width:none; min-height:100vh; text-align:initial; width:100%; }
@@ -204,7 +203,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .proposal-actions { border-top:1px solid #edf1f5; display:grid; gap:10px; margin-top:16px; padding-top:14px; }.proposal-actions label { color:var(--if-muted); display:grid; font-size:12px; font-weight:700; gap:5px; }.proposal-actions textarea { border:1px solid #d9e2ee; border-radius:8px; box-sizing:border-box; padding:8px; resize:vertical; width:100%; }.proposal-actions > div { display:flex; flex-wrap:wrap; gap:8px; }.danger-button,.quiet-button { border-radius:9px; cursor:pointer; font-size:13px; font-weight:750; padding:9px 12px; }.danger-button { background:#fff0f1; border:1px solid #f2b8bd; color:#b4232c; }.quiet-button { background:#fff; border:1px solid #cbd5e1; color:#475569; }.proposal-audit { border-top:1px solid #edf1f5; color:var(--if-muted); display:grid; font-size:12px; gap:5px; margin-top:16px; padding-top:13px; }.proposal-audit strong { color:#334155; }.proposal-audit ul { margin:0; padding-left:18px; }.proposal-audit li + li { margin-top:4px; }.proposal-audit b { color:#334155; }
 @media (max-width:920px) { .approvals-layout { grid-template-columns:1fr; } }
 
-/* Overview */
 .overview-page { display:grid; gap:24px; }
 .overview-hero { align-items:center; display:grid; gap:24px; grid-template-columns:minmax(0,1.6fr) minmax(240px,.7fr); }
 .overview-hero .eyebrow { color:var(--if-primary); font-size:11px; font-weight:800; letter-spacing:.1em; margin:0; }
@@ -242,7 +240,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .lifecycle-awaiting_human_review { background:#eef2ff; color:#3f4fb5; }
 @media (max-width:920px) { .overview-hero,.overview-two-column { grid-template-columns:1fr; } .overview-stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 
-/* Human review panel */
 .human-review-panel { display:grid; gap:12px; }
 .review-reason { color:#334155; font-size:14px; margin:0; }
 .review-evidence,.review-tool { color:var(--if-muted); font-size:13px; margin:0; }
@@ -256,12 +253,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .human-review-panel .quiet-button { background:#fff; border:1px solid #cbd5e1; color:#475569; }
 .human-review-panel .danger-button { background:#fff0f1; border:1px solid #f2b8bd; color:#b4232c; }
 
-/* Long lists scroll inside their card instead of stretching the page */
 .incident-list,.investigation-list { max-height:min(56vh,520px); overflow-y:auto; overscroll-behavior:contain; padding-right:4px; scrollbar-width:thin; }
 .investigation-list-surface { position:sticky; top:20px; }
 .incidents-list-focused .incident-list-surface { max-width:none; }
 
-/* Multi-agent trace */
 .agent-trace { border-top:1px solid var(--if-border); margin-top:24px; padding-top:22px; }
 .agent-trace.is-compact { border-top:0; margin-top:10px; padding-top:0; }
 .trace-list { display:grid; gap:0; list-style:none; margin:0; padding:0; position:relative; }
@@ -303,7 +298,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .investigation-status h2.status-running { color:#9a6712; }
 .investigation-status h2.status-awaiting_human_review { color:#3f4fb5; }
 
-/* Page intro, approval alert, and side-by-side incident steps */
 .page-intro { color:var(--if-muted); display:block; font-size:14px; margin-top:8px; max-width:70ch; }
 .nav-label { align-items:center; display:flex; gap:8px; }
 .nav-badge { background:#e5484d; border-radius:999px; box-shadow:0 0 0 3px rgba(229,72,77,.25); color:#fff; font-size:11px; font-weight:800; line-height:1; min-width:8px; padding:4px 7px; text-align:center; animation:badge-pulse 2s ease-in-out infinite; }
@@ -319,7 +313,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .incident-detail-surface .selected-incident > span:not(.priority) { color:#334155; font-size:14px; white-space:pre-wrap; }
 .selected-incident-hint { background:#eef6ff; border-radius:8px; color:#31577d; font-size:12px; line-height:1.5; padding:9px 11px; }
 @media (max-width:920px) { .incidents-layout { grid-template-columns:1fr; } .incident-detail-surface { position:static; } .approval-banner { flex-wrap:wrap; } }
-/* Severity filter and latest investigation state in the incident queue */
 .severity-filter { display:flex; flex-wrap:wrap; gap:6px; margin:-6px 0 14px; }
 .severity-chip { align-items:center; background:#fff; border:1px solid var(--if-border); border-radius:999px; color:#475569; cursor:pointer; display:inline-flex; font-size:12px; font-weight:750; gap:6px; padding:5px 10px; }
 .severity-chip b { background:#eef2f7; border-radius:999px; font-size:10px; padding:1px 6px; }
@@ -331,7 +324,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .investigation-state { border-radius:999px; font-size:10px; font-weight:800; letter-spacing:.04em; padding:4px 7px; }
 .investigation-state.is-new { background:#eff6ff; color:#31577d; }
 .priority-critical { box-shadow:inset 0 0 0 1px #f2b8bd; }
-/* A specialist agent's own tool calls, nested under its delegation */
 .trace-subagent_call { padding:3px 0 3px 26px; }
 .trace-subagent_call .trace-icon { font-size:11px; height:22px; margin-left:4px; width:22px; }
 .trace-subagent_call .trace-body { background:#fff; border-style:dashed; gap:2px; padding:6px 10px; }
@@ -355,7 +347,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .resolve-banner { align-items:center; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:10px; color:#166534; display:flex; flex-wrap:wrap; font-size:13px; gap:12px; justify-content:space-between; margin-bottom:16px; padding:12px 14px; }
 .resolve-banner.is-resolved { font-weight:700; }
 
-/* Investigation report: root cause, causal chain, next actions, folded details. */
 .trace-fold { border:1px solid var(--if-border); border-radius:10px; margin-bottom:6px; }
 .trace-fold > summary { color:var(--if-ink); cursor:pointer; font-size:14px; font-weight:700; padding:12px 14px; }
 .trace-fold > summary span { color:var(--if-muted); display:block; font-size:10px; font-weight:800; letter-spacing:.1em; }
@@ -404,10 +395,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .evidence-status.is-unavailable { background:#fef2f2; color:#b91c1c; }
 .evidence-status.is-live { background:#dcfce7; color:#166534; }
 @media (max-width: 750px) { .causal-steps { flex-direction:column; gap:22px; } .causal-steps li + li::before { content:'↓'; left:50%; top:-18px; transform:translateX(-50%); } }
-/* Fixed-height frame so a long trace scrolls inside the card instead of stretching the page. */
 .trace-frame { background:#fbfcfe; border:1px solid var(--if-border); border-radius:10px; max-height:420px; overflow-y:auto; padding:12px 12px 4px; scroll-behavior:smooth; }
 .review-trace .trace-frame { max-height:none; }
-/* Next actions stand out: the operator should see what to do without reading the rest. */
 .report-actions { background:#ecfdf5; border:2px solid #34d399; border-radius:12px; margin-bottom:20px; padding:14px 18px; }
 .report-actions h3 { align-items:center; color:#065f46 !important; display:flex; font-size:16px !important; gap:8px; }
 .report-actions ol { color:#064e3b !important; font-size:15px !important; font-weight:600; }
