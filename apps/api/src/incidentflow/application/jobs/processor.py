@@ -8,6 +8,7 @@ write with the lease token from its claim.
 import asyncio
 import contextlib
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from enum import Enum
 from typing import Any
@@ -19,7 +20,11 @@ from sqlalchemy.orm import Session
 from incidentflow.agent.orchestration.policies.human_review import (
     jira_write_review_from_interrupt,
 )
+from incidentflow.domain.history.models import IncidentEventKind
 from incidentflow.domain.investigations.models import Investigation, InvestigationLifecycle
+from incidentflow.infrastructure.database.incident_event_repository import (
+    IncidentEventRepository,
+)
 from incidentflow.infrastructure.database.investigation_repository import (
     ClaimedInvestigation,
     InvestigationRepository,
@@ -55,8 +60,72 @@ class LeaseLostError(RuntimeError):
     """A fenced write matched no row: another worker now owns the investigation."""
 
 
+JIRA_KEY = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
+
+
+def _jira_key(events: IncidentEventRepository, investigation_id: UUID, report: Any) -> str | None:
+    """The Jira issue an approved write created, as reported by the Jira specialist."""
+    if not events.has_event(
+        investigation_id,
+        IncidentEventKind.REVIEW_DECIDED,
+        decision="APPROVE",
+        tool_name="createJiraIssue",
+    ):
+        return None
+    for item in report.evidence:
+        source = item.source.casefold()
+        if "it_operations" in source or "jira" in source:
+            match = JIRA_KEY.search(item.detail)
+            if match:
+                return match.group(0)
+    return None
+
+
+def record_outcome_event(
+    events: IncidentEventRepository, persisted: Investigation, review: Any = None
+) -> None:
+    """Append the event matching the lifecycle a fenced write just committed."""
+    common = {"incident_id": persisted.incident_id, "investigation_id": persisted.id}
+    lifecycle = persisted.lifecycle
+    if lifecycle is InvestigationLifecycle.AWAITING_HUMAN_REVIEW and review is not None:
+        details = {"review_type": review.review_type.value}
+        tool_name = (review.draft or {}).get("tool_name")
+        if tool_name:
+            details["tool_name"] = tool_name
+        what = "a Jira write" if tool_name else "the report"
+        events.record(
+            IncidentEventKind.REVIEW_REQUESTED,
+            summary=f"Paused for an operator decision on {what}",
+            details=details,
+            **common,
+        )
+    elif lifecycle is InvestigationLifecycle.COMPLETED and persisted.report is not None:
+        report = persisted.report
+        details = {"confidence": report.confidence, "root_cause": report.root_cause}
+        jira_key = _jira_key(events, persisted.id, report)
+        if jira_key:
+            details["jira_key"] = jira_key
+        events.record(
+            IncidentEventKind.INVESTIGATION_COMPLETED,
+            summary=f"Report written, confidence {round(report.confidence * 100)}%",
+            details=details,
+            **common,
+        )
+    elif lifecycle is InvestigationLifecycle.FAILED:
+        events.record(
+            IncidentEventKind.INVESTIGATION_FAILED,
+            summary="Investigation failed",
+            details={"error": persisted.error_message},
+            **common,
+        )
+
+
 def persist_workflow_result(
-    repository: InvestigationRepository, claimed: ClaimedInvestigation, result: dict
+    repository: InvestigationRepository,
+    claimed: ClaimedInvestigation,
+    result: dict,
+    *,
+    events: IncidentEventRepository | None = None,
 ) -> Investigation:
     """Persist a completed, paused, or failed graph result as product lifecycle state."""
     investigation_id = claimed.investigation.id
@@ -79,6 +148,8 @@ def persist_workflow_result(
         )
     if persisted is None:
         raise LeaseLostError("The investigation lease was lost before the result was persisted.")
+    if events is not None:
+        record_outcome_event(events, persisted, review if interrupts else None)
     return persisted
 
 
@@ -268,10 +339,18 @@ class InvestigationJobProcessor:
 
     def _persist_sync(self, claimed: ClaimedInvestigation, result: dict) -> Investigation:
         with self.session_factory() as session:
-            return persist_workflow_result(InvestigationRepository(session), claimed, result)
+            return persist_workflow_result(
+                InvestigationRepository(session),
+                claimed,
+                result,
+                events=IncidentEventRepository(session),
+            )
 
     def _fail_sync(self, claimed: ClaimedInvestigation, message: str) -> Investigation | None:
         with self.session_factory() as session:
-            return InvestigationRepository(session).fail_investigation(
+            failed = InvestigationRepository(session).fail_investigation(
                 claimed.investigation.id, message, lease_token=claimed.lease_token
             )
+            if failed is not None:
+                record_outcome_event(IncidentEventRepository(session), failed)
+            return failed
