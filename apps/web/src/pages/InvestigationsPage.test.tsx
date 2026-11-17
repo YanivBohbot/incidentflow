@@ -42,6 +42,21 @@ describe('InvestigationsPage resolve banner', () => {
     expect(onViewJournal).toHaveBeenCalledWith('inc')
   })
 
+  it('offers a way back to the history when opened from it', async () => {
+    const onBackToHistory = vi.fn()
+    render(<InvestigationsPage incidents={[incident('OPEN')]} investigations={[completed]} onBackToHistory={onBackToHistory} onConfirmLesson={vi.fn()} onSelectInvestigation={vi.fn()} selectedInvestigation={completed} />)
+
+    await userEvent.click(screen.getByRole('button', { name: '← Back to history' }))
+
+    expect(onBackToHistory).toHaveBeenCalled()
+  })
+
+  it('shows no back button when not opened from the history', () => {
+    renderPage('OPEN')
+
+    expect(screen.queryByRole('button', { name: '← Back to history' })).toBeNull()
+  })
+
   it('hides the lesson form until the incident is resolved', async () => {
     renderPage('OPEN')
     expect(screen.queryByRole('region', { name: 'Confirm incident lesson for memory' })).toBeNull()

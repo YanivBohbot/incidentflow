@@ -423,3 +423,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .journal-investigation_failed { border-left-color:#dc2626; }
 .resolve-actions { display:flex; flex-wrap:wrap; gap:8px; }
 @media (max-width: 900px) { .history-layout { grid-template-columns:1fr; } }
+.history-groups { display:grid; gap:8px; max-height:640px; overflow-y:auto; }
+.history-group { border:1px solid var(--if-border); border-radius:10px; }
+.history-group.is-open { border-color:#a7e1da; }
+.history-group-heading { align-items:baseline; background:transparent; border:0; cursor:pointer; display:flex; flex-wrap:wrap; gap:8px; padding:10px 12px; text-align:left; width:100%; }
+.history-group-heading strong { color:var(--if-ink); font-size:14px; }
+.history-group-heading small { color:var(--if-muted); font-size:12px; }
+.history-group .history-list { max-height:none; padding:0 8px 8px; }
+.chip-label { display:inline-block; max-width:120px; overflow:hidden; text-overflow:ellipsis; vertical-align:bottom; white-space:nowrap; }
+.history-filter-gap { flex:1 1 auto; }
+.back-to-history { margin:0 0 12px; }

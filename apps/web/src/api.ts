@@ -28,11 +28,13 @@ export type IncidentEvent = {
   details: Record<string, unknown>
   reconstructed: boolean
   incident_title: string | null
+  incident_service: string | null
 }
 
 export type IncidentEventPage = { events: IncidentEvent[], next_before: string | null }
 
-export type HistoryQuery = { incidentId?: string, kinds?: IncidentEventKind[], before?: string }
+/** `category` is an incident's service, or its title when it has none. */
+export type HistoryQuery = { category?: string, kinds?: IncidentEventKind[], before?: string }
 
 export type DemoRun = {
   started: boolean
@@ -195,9 +197,9 @@ export const api = {
   startDemoRun: (onlyIfIdle = false) =>
     request<DemoRun>(`/demo/runs${onlyIfIdle ? '?only_if_idle=true' : ''}`, { method: 'POST' }),
   getReadiness: () => requestOperational<Readiness>('/health/ready'),
-  getHistory: ({ incidentId, kinds, before }: HistoryQuery) => {
+  getHistory: ({ category, kinds, before }: HistoryQuery) => {
     const params = new URLSearchParams()
-    if (incidentId) params.set('incident_id', incidentId)
+    if (category) params.set('category', category)
     if (kinds?.length) params.set('kinds', kinds.join(','))
     if (before) params.set('before', before)
     const query = params.toString()

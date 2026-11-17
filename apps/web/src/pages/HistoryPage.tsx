@@ -1,5 +1,5 @@
-/** History page: the decision timeline on the left, the selected incident's journal on the right. */
-import { useCallback, useEffect, useRef, useState } from 'react'
+/** History page: events grouped by incident category on the left, one incident's journal on the right. */
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
 import type { Incident, IncidentEvent, IncidentEventKind } from '../api'
 import { EmptyState } from '../components/ui/EmptyState'
@@ -7,6 +7,8 @@ import { EmptyState } from '../components/ui/EmptyState'
 export const DECISION_KINDS: IncidentEventKind[] = ['REVIEW_DECIDED', 'INCIDENT_RESOLVED', 'LESSON_SAVED']
 
 const REFRESH_MS = 10_000
+const VISIBLE_CHIPS = 6
+const DEMO_RUNS = 'Demo runs'
 
 const KIND_ICONS: Record<IncidentEventKind, string> = {
   INCIDENT_CREATED: '🚨',
@@ -21,10 +23,17 @@ const KIND_ICONS: Record<IncidentEventKind, string> = {
   DEMO_RUN_STARTED: '▶',
 }
 
+/** The type of incident: its service, or its title when it has none. */
+const incidentCategory = (incident: Pick<Incident, 'service' | 'title'>) => incident.service || incident.title
+const eventCategory = (event: IncidentEvent) => event.incident_service || event.incident_title || DEMO_RUNS
+
 type HistoryPageProps = {
   incidents: Incident[]
-  /** Incident whose journal opens first, e.g. from a "View journal" link. */
-  initialIncidentId?: string
+  /** Incident to open, asked by a "View journal" link; a new focusRequest re-applies it. */
+  focusIncidentId?: string
+  focusRequest?: number
+  /** False while another tab is shown: the page keeps its state but stops polling. */
+  active?: boolean
   onOpenInvestigation: (investigationId: string) => void
 }
 
@@ -44,24 +53,44 @@ function EventFacts({ event }: { event: IncidentEvent }) {
   return facts.length ? <small className="history-facts">{facts.join(' · ')}</small> : null
 }
 
-export function HistoryPage({ incidents, initialIncidentId, onOpenInvestigation }: HistoryPageProps) {
+export function HistoryPage({ incidents, focusIncidentId, focusRequest, active = true, onOpenInvestigation }: HistoryPageProps) {
   const [events, setEvents] = useState<IncidentEvent[]>([])
   const [nextBefore, setNextBefore] = useState<string | null>(null)
-  const [incidentFilter, setIncidentFilter] = useState<string | undefined>(undefined)
+  const [category, setCategory] = useState<string | undefined>(undefined)
   const [decisionsOnly, setDecisionsOnly] = useState(false)
-  const [selectedIncidentId, setSelectedIncidentId] = useState<string | undefined>(initialIncidentId)
+  const [showAllChips, setShowAllChips] = useState(false)
+  const [toggled, setToggled] = useState<Record<string, boolean>>({})
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | undefined>(focusIncidentId)
   const [journal, setJournal] = useState<IncidentEvent[]>([])
   const [error, setError] = useState<string | null>(null)
+  /** True once "Load more" has added older pages, so a refresh must not drop them. */
+  const paged = useRef(false)
 
   const kinds = decisionsOnly ? DECISION_KINDS : undefined
 
-  /** True once "Load more" has added older pages, so a refresh must not drop them. */
-  const paged = useRef(false)
+  /** Categories with their incident count, most incidents first. */
+  const chips = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const item of incidents) counts.set(incidentCategory(item), (counts.get(incidentCategory(item)) ?? 0) + 1)
+    return [...counts.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+  }, [incidents])
+  const shownChips = showAllChips ? chips : chips.slice(0, VISIBLE_CHIPS)
+
+  /** Loaded events grouped by category, ordered by their latest activity. */
+  const groups = useMemo(() => {
+    const byName = new Map<string, IncidentEvent[]>()
+    for (const item of events) byName.set(eventCategory(item), [...(byName.get(eventCategory(item)) ?? []), item])
+    return [...byName.entries()].map(([name, items]) => ({
+      name,
+      items,
+      incidentCount: new Set(items.map((item) => item.incident_id).filter(Boolean)).size,
+    }))
+  }, [events])
 
   /** Fetch the first page: a reset replaces the list, a refresh only adds new events on top. */
   const loadFirstPage = useCallback(async (mode: 'reset' | 'refresh') => {
     try {
-      const page = await api.getHistory({ incidentId: incidentFilter, kinds, before: undefined })
+      const page = await api.getHistory({ category, kinds, before: undefined })
       if (mode === 'reset' || !paged.current) {
         paged.current = false
         setEvents(page.events)
@@ -76,15 +105,21 @@ export function HistoryPage({ incidents, initialIncidentId, onOpenInvestigation 
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not load the history.')
     }
-  }, [incidentFilter, kinds])
+  }, [category, kinds])
+
+  useEffect(() => { void loadFirstPage('reset') }, [loadFirstPage])
 
   useEffect(() => {
-    void loadFirstPage('reset')
+    if (!active) return
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') void loadFirstPage('refresh')
     }, REFRESH_MS)
     return () => window.clearInterval(timer)
-  }, [loadFirstPage])
+  }, [active, loadFirstPage])
+
+  useEffect(() => {
+    if (focusRequest && focusIncidentId) setSelectedIncidentId(focusIncidentId)
+  }, [focusIncidentId, focusRequest])
 
   useEffect(() => {
     if (!selectedIncidentId) return
@@ -97,11 +132,13 @@ export function HistoryPage({ incidents, initialIncidentId, onOpenInvestigation 
 
   async function loadMore() {
     if (!nextBefore) return
-    const page = await api.getHistory({ incidentId: incidentFilter, kinds, before: nextBefore })
+    const page = await api.getHistory({ category, kinds, before: nextBefore })
     paged.current = true
     setEvents((current) => [...current, ...page.events])
     setNextBefore(page.next_before)
   }
+
+  const isOpen = (name: string, index: number) => toggled[name] ?? (category ? name === category : index === 0)
 
   const selectedTitle = incidents.find((item) => item.id === selectedIncidentId)?.title
     ?? journal[0]?.incident_title ?? 'Incident'
@@ -111,32 +148,56 @@ export function HistoryPage({ incidents, initialIncidentId, onOpenInvestigation 
       <section className="surface history-surface">
         <div className="section-heading">
           <p>DECISION TIMELINE</p>
-          <h2>What happened, newest first</h2>
-          <span>Every alarm, investigation, operator decision, resolution, and lesson. Select one to open its incident journal.</span>
+          <h2>What happened, by type of incident</h2>
+          <span>Incidents of the same service are grouped. Open a group, then select an event to read its incident journal.</span>
         </div>
-        <div className="history-filters">
-          <select aria-label="Filter by incident" onChange={(change) => setIncidentFilter(change.target.value || undefined)} value={incidentFilter ?? ''}>
-            <option value="">All incidents</option>
-            {incidents.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
-          </select>
-          <button aria-pressed={decisionsOnly} className={`severity-chip ${decisionsOnly ? 'is-active' : ''}`} onClick={() => setDecisionsOnly((value) => !value)} type="button">Decisions only</button>
+        <div aria-label="Filter history" className="history-filters" role="group">
+          <button aria-pressed={!category} className={`severity-chip ${!category ? 'is-active' : ''}`} onClick={() => setCategory(undefined)} type="button">All</button>
+          {shownChips.map(([name, count]) => (
+            <button aria-label={`${name} ${count}`} aria-pressed={category === name} className={`severity-chip ${category === name ? 'is-active' : ''}`} key={name} onClick={() => setCategory(category === name ? undefined : name)} title={name} type="button">
+              <span className="chip-label">{name}</span> <b>{count}</b>
+            </button>
+          ))}
+          {chips.length > VISIBLE_CHIPS && (
+            <button className="severity-chip" onClick={() => setShowAllChips((value) => !value)} type="button">
+              {showAllChips ? 'Less' : `+${chips.length - VISIBLE_CHIPS}`}
+            </button>
+          )}
+          <span className="history-filter-gap" />
+          <button aria-pressed={decisionsOnly} className={`severity-chip ${decisionsOnly ? 'is-active' : ''}`} onClick={() => setDecisionsOnly((value) => !value)} type="button">Decisions</button>
         </div>
         {error && <p className="proposal-error" role="alert">{error}</p>}
-        {events.length === 0 && !error ? <EmptyState description="Events appear here as incidents are raised, investigated, and resolved." title="Nothing recorded yet" /> : (
-          <ol aria-label="Chronology" className="history-list">
-            {events.map((item) => (
-              <li className={item.incident_id === selectedIncidentId ? 'is-selected' : ''} key={item.id}>
-                <button disabled={!item.incident_id} onClick={() => item.incident_id && setSelectedIncidentId(item.incident_id)} type="button">
-                  <span aria-hidden="true" className="history-icon">{KIND_ICONS[item.kind]}</span>
-                  <span className="history-body">
-                    <strong>{item.summary}</strong>
-                    <small><EventTime event={item} /> · {item.incident_title ?? 'Demo'} · {item.actor}</small>
-                    <EventFacts event={item} />
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ol>
+        {groups.length === 0 && !error ? <EmptyState description="Events appear here as incidents are raised, investigated, and resolved." title="Nothing recorded yet" /> : (
+          <div className="history-groups">
+            {groups.map((item, index) => {
+              const open = isOpen(item.name, index)
+              return (
+                <section aria-label={item.name} className={`history-group ${open ? 'is-open' : ''}`} key={item.name}>
+                  <button aria-expanded={open} className="history-group-heading" onClick={() => setToggled((current) => ({ ...current, [item.name]: !open }))} type="button">
+                    <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+                    <strong>{item.name}</strong>
+                    <small>{item.incidentCount ? `${item.incidentCount} incident${item.incidentCount > 1 ? 's' : ''} · ` : ''}latest <EventTime event={item.items[0]} /></small>
+                  </button>
+                  {open && (
+                    <ol className="history-list">
+                      {item.items.map((entry) => (
+                        <li className={entry.incident_id === selectedIncidentId ? 'is-selected' : ''} key={entry.id}>
+                          <button disabled={!entry.incident_id} onClick={() => entry.incident_id && setSelectedIncidentId(entry.incident_id)} type="button">
+                            <span aria-hidden="true" className="history-icon">{KIND_ICONS[entry.kind]}</span>
+                            <span className="history-body">
+                              <strong>{entry.summary}</strong>
+                              <small><EventTime event={entry} /> · {entry.actor}</small>
+                              <EventFacts event={entry} />
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </section>
+              )
+            })}
+          </div>
         )}
         {nextBefore && <button className="quiet-button" onClick={() => void loadMore()} type="button">Load more</button>}
       </section>
@@ -161,7 +222,7 @@ export function HistoryPage({ incidents, initialIncidentId, onOpenInvestigation 
               </li>
             ))}
           </ol>
-        </> : <EmptyState description="Select an event on the left to read the full journal of its incident." title="Select an incident" />}
+        </> : <EmptyState description="Open a group on the left and select an event to read the full journal of its incident." title="Select an incident" />}
       </section>
     </div>
   )

@@ -5,100 +5,154 @@ import { api } from '../api'
 import type { Incident, IncidentEvent } from '../api'
 import { DECISION_KINDS, HistoryPage } from './HistoryPage'
 
-const incident = { id: 'inc-1', title: 'Checkout down' } as Incident
+const incident = (id: string, title: string, service: string | null) => ({ id, title, service }) as Incident
+const incidents = [
+  incident('inc-1', 'Checkout down', 'checkout-api'),
+  incident('inc-2', 'Checkout down again', 'checkout-api'),
+  incident('inc-3', 'Login failures', 'auth-service'),
+  incident('inc-4', 'Printer on fire', null),
+]
 
 const event = (overrides: Partial<IncidentEvent>): IncidentEvent => ({
   id: 'e', incident_id: 'inc-1', investigation_id: null, kind: 'INCIDENT_CREATED',
   occurred_at: '2026-11-17T12:00:00Z', actor: 'system', summary: 'Incident created',
-  details: {}, reconstructed: false, incident_title: 'Checkout down', ...overrides,
+  details: {}, reconstructed: false, incident_title: 'Checkout down', incident_service: 'checkout-api', ...overrides,
 })
 
 const history = [
-  event({ id: 'e3', kind: 'INCIDENT_RESOLVED', summary: 'Marked resolved by alice', occurred_at: '2026-11-17T12:30:00Z' }),
-  event({ id: 'e2', kind: 'REVIEW_DECIDED', summary: 'Jira write approved by alice', occurred_at: '2026-11-17T12:10:00Z', investigation_id: 'inv-1' }),
+  event({ id: 'e5', kind: 'INCIDENT_RESOLVED', summary: 'Marked resolved by alice', occurred_at: '2026-11-17T12:30:00Z' }),
+  event({ id: 'e4', incident_id: 'inc-3', incident_title: 'Login failures', incident_service: 'auth-service', summary: 'Login alarm raised', occurred_at: '2026-11-17T12:20:00Z' }),
+  event({ id: 'e3', incident_id: 'inc-2', incident_title: 'Checkout down again', summary: 'Jira write approved by alice', kind: 'REVIEW_DECIDED', investigation_id: 'inv-1', occurred_at: '2026-11-17T12:10:00Z' }),
+  event({ id: 'e2', incident_id: null, incident_title: null, incident_service: null, kind: 'DEMO_RUN_STARTED', summary: 'Demo run started', occurred_at: '2026-11-17T12:05:00Z' }),
   event({ id: 'e1', summary: 'Incident created', reconstructed: true }),
 ]
 
 function mockApi(nextBefore: string | null = null) {
   const getHistory = vi.spyOn(api, 'getHistory').mockResolvedValue({ events: history, next_before: nextBefore })
-  const getIncidentEvents = vi.spyOn(api, 'getIncidentEvents').mockResolvedValue([...history].reverse())
+  const getIncidentEvents = vi.spyOn(api, 'getIncidentEvents').mockResolvedValue([history[4], history[0]])
   return { getHistory, getIncidentEvents }
 }
+
+function renderPage(props: Partial<Parameters<typeof HistoryPage>[0]> = {}) {
+  return render(<HistoryPage incidents={incidents} onOpenInvestigation={vi.fn()} {...props} />)
+}
+
+const group = (name: string) => screen.findByRole('region', { name })
+const summaries = (element: HTMLElement) =>
+  within(element).queryAllByRole('listitem').map((row) => row.querySelector('strong')?.textContent)
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('HistoryPage', () => {
-  it('renders the chronology newest first with incident titles', async () => {
+  it('groups events by service, falling back to the title, newest activity first', async () => {
     mockApi()
-    render(<HistoryPage incidents={[incident]} onOpenInvestigation={vi.fn()} />)
+    renderPage()
 
-    const rows = within(await screen.findByRole('list', { name: 'Chronology' })).getAllByRole('listitem')
-    expect(rows.map((row) => row.querySelector('strong')?.textContent)).toEqual([
-      'Marked resolved by alice', 'Jira write approved by alice', 'Incident created',
-    ])
-    expect(rows[0]).toHaveTextContent('Checkout down')
+    const checkout = await group('checkout-api')
+    expect(summaries(checkout)).toEqual(['Marked resolved by alice', 'Jira write approved by alice', 'Incident created'])
+    const names = screen.getAllByRole('region').map((region) => region.getAttribute('aria-label'))
+    expect(names).toEqual(['checkout-api', 'auth-service', 'Demo runs'])
   })
 
-  it('decisions-only chip filters to decision kinds', async () => {
+  it('opens the most recent category and folds the others', async () => {
+    mockApi()
+    renderPage()
+
+    expect(summaries(await group('checkout-api'))).toHaveLength(3)
+    expect(summaries(await group('auth-service'))).toHaveLength(0)
+    await userEvent.click(within(await group('auth-service')).getByRole('button', { name: /auth-service/ }))
+    expect(summaries(await group('auth-service'))).toEqual(['Login alarm raised'])
+  })
+
+  it('shows short category chips with incident counts', async () => {
+    mockApi()
+    renderPage()
+
+    const filters = screen.getByRole('group', { name: 'Filter history' })
+    expect(within(filters).getByRole('button', { name: 'checkout-api 2' })).toBeInTheDocument()
+    expect(within(filters).getByRole('button', { name: 'auth-service 1' })).toBeInTheDocument()
+    expect(within(filters).getByRole('button', { name: 'Printer on fire 1' })).toBeInTheDocument()
+  })
+
+  it('a category chip loads only that category', async () => {
     const { getHistory } = mockApi()
-    render(<HistoryPage incidents={[incident]} onOpenInvestigation={vi.fn()} />)
+    renderPage()
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Decisions only' }))
+    await userEvent.click(screen.getByRole('button', { name: 'auth-service 1' }))
 
-    expect(getHistory).toHaveBeenLastCalledWith({ incidentId: undefined, kinds: DECISION_KINDS, before: undefined })
+    expect(getHistory).toHaveBeenLastCalledWith({ category: 'auth-service', kinds: undefined, before: undefined })
+  })
+
+  it('the decisions chip filters to decision kinds', async () => {
+    const { getHistory } = mockApi()
+    renderPage()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Decisions' }))
+
+    expect(getHistory).toHaveBeenLastCalledWith({ category: undefined, kinds: DECISION_KINDS, before: undefined })
     expect(DECISION_KINDS).toEqual(['REVIEW_DECIDED', 'INCIDENT_RESOLVED', 'LESSON_SAVED'])
   })
 
-  it('selecting an event shows that incident journal oldest first', async () => {
-    const { getIncidentEvents } = mockApi()
-    render(<HistoryPage incidents={[incident]} onOpenInvestigation={vi.fn()} />)
+  it('more than six categories hide behind a +N chip', async () => {
+    mockApi()
+    const many = Array.from({ length: 8 }, (_, index) => incident(`m${index}`, `t${index}`, `service-${index}`))
+    renderPage({ incidents: many })
 
-    const rows = within(await screen.findByRole('list', { name: 'Chronology' })).getAllByRole('listitem')
+    expect(screen.queryByRole('button', { name: 'service-7 1' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: '+2' }))
+    expect(screen.getByRole('button', { name: 'service-7 1' })).toBeInTheDocument()
+  })
+
+  it('selecting an event shows that incident journal, and reconstructed times show ≈', async () => {
+    const { getIncidentEvents } = mockApi()
+    renderPage()
+
+    const rows = within(await group('checkout-api')).getAllByRole('listitem')
+    expect(rows[2]).toHaveTextContent('≈')
     await userEvent.click(within(rows[0]).getByRole('button'))
 
     expect(getIncidentEvents).toHaveBeenCalledWith('inc-1')
     const journal = await within(screen.getByRole('list', { name: 'Journal' })).findAllByRole('listitem')
     expect(journal[0]).toHaveTextContent('Incident created')
-    expect(journal[2]).toHaveTextContent('Marked resolved by alice')
   })
 
-  it('reconstructed events show an approximate time marker', async () => {
-    mockApi()
-    render(<HistoryPage incidents={[incident]} onOpenInvestigation={vi.fn()} />)
+  it('a journal request from another page selects that incident', async () => {
+    const { getIncidentEvents } = mockApi()
+    const { rerender } = renderPage()
 
-    const rows = within(await screen.findByRole('list', { name: 'Chronology' })).getAllByRole('listitem')
-    expect(rows[2]).toHaveTextContent('≈')
-    expect(rows[0]).not.toHaveTextContent('≈')
+    rerender(<HistoryPage focusIncidentId="inc-3" focusRequest={1} incidents={incidents} onOpenInvestigation={vi.fn()} />)
+
+    expect(await screen.findByRole('heading', { name: 'Login failures' })).toBeInTheDocument()
+    expect(getIncidentEvents).toHaveBeenCalledWith('inc-3')
   })
 
   it('load more requests the next page with before', async () => {
     const { getHistory } = mockApi('cursor-1')
-    render(<HistoryPage incidents={[incident]} onOpenInvestigation={vi.fn()} />)
+    renderPage()
 
     await userEvent.click(await screen.findByRole('button', { name: 'Load more' }))
 
-    expect(getHistory).toHaveBeenLastCalledWith({ incidentId: undefined, kinds: undefined, before: 'cursor-1' })
+    expect(getHistory).toHaveBeenLastCalledWith({ category: undefined, kinds: undefined, before: 'cursor-1' })
   })
 
   it('the periodic refresh keeps the older pages already loaded', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const older = event({ id: 'e0', summary: 'Older event', occurred_at: '2026-11-16T09:00:00Z' })
-    const newest = event({ id: 'e4', summary: 'Newest event', occurred_at: '2026-11-17T13:00:00Z' })
+    const newest = event({ id: 'e9', summary: 'Newest event', occurred_at: '2026-11-17T13:00:00Z' })
     const getHistory = vi.spyOn(api, 'getHistory')
       .mockResolvedValueOnce({ events: history, next_before: 'cursor-1' })
       .mockResolvedValueOnce({ events: [older], next_before: null })
       .mockResolvedValue({ events: [newest, ...history], next_before: 'cursor-1' })
     vi.spyOn(api, 'getIncidentEvents').mockResolvedValue([])
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-    render(<HistoryPage incidents={[incident]} onOpenInvestigation={vi.fn()} />)
+    renderPage()
 
     await user.click(await screen.findByRole('button', { name: 'Load more' }))
     await screen.findByText('Older event')
     await vi.advanceTimersByTimeAsync(10_000)
     await screen.findByText('Newest event')
 
-    const rows = within(screen.getByRole('list', { name: 'Chronology' })).getAllByRole('listitem')
-    expect(rows.map((row) => row.querySelector('strong')?.textContent)).toEqual([
+    expect(summaries(await group('checkout-api'))).toEqual([
       'Newest event', 'Marked resolved by alice', 'Jira write approved by alice', 'Incident created', 'Older event',
     ])
     expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
@@ -106,13 +160,25 @@ describe('HistoryPage', () => {
     vi.useRealTimers()
   })
 
+  it('does not poll while the tab is hidden', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const { getHistory } = mockApi()
+    renderPage({ active: false })
+
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(getHistory).toHaveBeenCalledTimes(1)
+    vi.useRealTimers()
+  })
+
   it('open investigation calls onOpenInvestigation from the journal', async () => {
     mockApi()
+    vi.spyOn(api, 'getIncidentEvents').mockResolvedValue([history[2]])
     const onOpenInvestigation = vi.fn()
-    render(<HistoryPage incidents={[incident]} initialIncidentId="inc-1" onOpenInvestigation={onOpenInvestigation} />)
+    renderPage({ focusIncidentId: 'inc-2', focusRequest: 1, onOpenInvestigation })
 
     const journal = await within(screen.getByRole('list', { name: 'Journal' })).findAllByRole('listitem')
-    await userEvent.click(within(journal[1]).getByRole('button', { name: 'Open investigation' }))
+    await userEvent.click(within(journal[0]).getByRole('button', { name: 'Open investigation' }))
 
     expect(onOpenInvestigation).toHaveBeenCalledWith('inv-1')
   })
