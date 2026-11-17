@@ -107,6 +107,9 @@ class IncidentEventRepository:
         )
         return [self._to_domain(orm, title) for orm, title in self.session.execute(statement)]
 
+    def incident_exists(self, incident_id: UUID) -> bool:
+        return self.session.get(IncidentORM, incident_id) is not None
+
     def has_events_for_incident(self, incident_id: UUID) -> bool:
         statement = select(IncidentEventORM.id).where(IncidentEventORM.incident_id == incident_id)
         return self.session.scalars(statement.limit(1)).first() is not None
