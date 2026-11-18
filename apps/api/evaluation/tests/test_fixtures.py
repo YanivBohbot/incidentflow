@@ -55,7 +55,9 @@ def test_unavailable_finding_validates_against_every_finding_model() -> None:
 def test_build_investigation_supervisor_accepts_injected_tools(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # CI has no .env file, so set every required setting explicitly.
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
     get_settings.cache_clear()
     try:
         stubs = fixture_delegations({}, [])
