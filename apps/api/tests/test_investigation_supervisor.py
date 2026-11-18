@@ -286,3 +286,48 @@ def test_jira_delegation_receives_the_operator_request_verbatim() -> None:
         "Create a Jira issue in project SAM1."
     )
     assert with_operator_request("context", {}) == "context"
+
+
+def _selector() -> LLMToolSelectorMiddleware:
+    return next(
+        middleware
+        for middleware in build_supervisor_middleware()
+        if isinstance(middleware, LLMToolSelectorMiddleware)
+    )
+
+
+def _selection_request(tools: list) -> object:
+    from langchain.agents.middleware import ModelRequest
+
+    return ModelRequest(
+        model=ChatOpenAI(model="gpt-4.1-mini", api_key="test-key"),
+        messages=[],
+        tools=list(tools),
+    )
+
+
+def test_tool_selection_prompt_names_every_delegation_tool_exactly() -> None:
+    for tool in supervisor_module.DELEGATION_TOOLS:
+        assert tool.name in supervisor_module.TOOL_SELECTION_SYSTEM_PROMPT
+
+
+def test_tool_selector_ignores_an_invented_tool_name_instead_of_failing() -> None:
+    tools = list(supervisor_module.DELEGATION_TOOLS)
+    names = [tool.name for tool in tools]
+
+    request = _selector()._process_selection_response(
+        {"tools": ["ask_jira", "ask_knowledge"]}, tools, names, _selection_request(tools)
+    )
+
+    assert [tool.name for tool in request.tools] == ["ask_knowledge"]
+
+
+def test_tool_selector_keeps_every_tool_when_only_invented_names_were_selected() -> None:
+    tools = list(supervisor_module.DELEGATION_TOOLS)
+    names = [tool.name for tool in tools]
+
+    request = _selector()._process_selection_response(
+        {"tools": ["ask_jira"]}, tools, names, _selection_request(tools)
+    )
+
+    assert {tool.name for tool in request.tools} == set(names)

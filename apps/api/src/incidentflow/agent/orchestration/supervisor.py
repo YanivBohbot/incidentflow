@@ -1,5 +1,6 @@
 """Builds the Investigation Supervisor that delegates to specialists and writes the report."""
 
+import logging
 from typing import Any
 
 from langchain.agents import create_agent
@@ -35,12 +36,45 @@ DELEGATION_TOOLS: tuple[BaseTool, ...] = (
 
 TOOL_SELECTION_SYSTEM_PROMPT = (
     "Select the specialist delegations necessary to investigate this incident. "
-    "Select Jira for ticket context, MongoDB for operational events, knowledge for similar incidents "
-    "or procedures, GitHub for recent code changes, and CloudWatch for production alarms, metrics, "
-    "and logs such as HTTP 5xx errors or latency. "
+    "Select ask_it_operations for Jira ticket context, ask_data_intelligence for MongoDB "
+    "operational events, ask_knowledge for similar incidents or procedures, ask_github for recent "
+    "code changes, and ask_cloudwatch for production alarms, metrics, and logs such as HTTP 5xx "
+    "errors or latency. "
+    "Use these exact tool names; never invent another name. "
     "Select all relevant tools when the request requires evidence from all sources. "
     "Do not select a tool merely because it is available."
 )
+
+logger = logging.getLogger(__name__)
+
+
+class TolerantToolSelectorMiddleware(LLMToolSelectorMiddleware):
+    """Tool selector that drops invented tool names instead of failing the investigation.
+
+    The selection schema is not enforced by the model provider, so the selector can return a
+    name that does not exist (for example "ask_jira"). LangChain raises on it, which fails the
+    whole investigation. Unknown names are dropped; when nothing valid remains, every tool stays
+    available and the supervisor, still bounded by the per-tool call limits, decides.
+    """
+
+    def _process_selection_response(
+        self,
+        response: dict[str, Any],
+        available_tools: list[BaseTool],
+        valid_tool_names: list[str],
+        request: Any,
+        **kwargs: Any,
+    ) -> Any:
+        selected = list(response.get("tools", []))
+        valid = [name for name in selected if name in valid_tool_names]
+        invented = [name for name in selected if name not in valid_tool_names]
+        if invented:
+            logger.warning("Tool selector returned unknown tools %s; ignoring them", invented)
+            if not valid:
+                valid = list(valid_tool_names)
+        return super()._process_selection_response(
+            {**response, "tools": valid}, available_tools, valid_tool_names, request, **kwargs
+        )
 
 
 def build_supervisor_middleware(
@@ -48,7 +82,7 @@ def build_supervisor_middleware(
 ) -> list[AgentMiddleware[Any, Any, Any]]:
     """Allow bounded specialist selection and retry only idempotent read delegations."""
     return [
-        LLMToolSelectorMiddleware(
+        TolerantToolSelectorMiddleware(
             model=model,
             system_prompt=TOOL_SELECTION_SYSTEM_PROMPT,
             max_tools=5,
