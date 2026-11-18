@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -44,12 +44,14 @@ def test_render_summary_formats_negative_and_zero_delta() -> None:
     assert "+0.00" in text
 
 
-def test_upload_dry_run_lists_every_evaluator_once(capsys: Any) -> None:
+def test_upload_dry_run_lists_every_evaluator_once(capsys: Any, monkeypatch: Any) -> None:
+    monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2_secret_key")
     assert upload_evaluators.main(["--dry-run"]) == 0
     out = capsys.readouterr().out
     total = len(TRAJECTORY_CODE_EVALUATORS) + len(REPORT_CODE_EVALUATORS)
     assert out.count("evaluator upload") == total
     assert "--yes" not in out
+    assert "lsv2_secret_key" not in out
 
 
 def test_upload_commands_never_contain_yes_or_api_key(monkeypatch: Any) -> None:
@@ -96,3 +98,45 @@ def test_fetch_experiment_scores_returns_none_without_experiments() -> None:
             return []
 
     assert fetch_experiment_scores(Empty(), "ds") == (None, None)
+
+
+def _fake(name: str, start: datetime | None, avg: float) -> SimpleNamespace:
+    return SimpleNamespace(
+        name=name,
+        start_time=start,
+        url="",
+        feedback_stats={"m": {"avg": avg}},
+        extra={},
+    )
+
+
+def test_fetch_experiment_scores_tolerates_missing_and_naive_start_times() -> None:
+    projects = [
+        _fake("never", None, 0.1),
+        _fake("naive", datetime(2026, 11, 2), 0.5),
+        _fake("aware", datetime(2026, 11, 3, tzinfo=UTC), 0.9),
+    ]
+
+    class FakeClient:
+        def list_projects(self, **kwargs: Any) -> list[SimpleNamespace]:
+            return projects
+
+    latest, previous = fetch_experiment_scores(FakeClient(), "ds")
+    assert latest is not None and previous is not None
+    assert (latest.name, previous.name) == ("aware", "naive")
+
+
+def test_fetch_experiment_scores_single_experiment_has_no_previous() -> None:
+    class FakeClient:
+        def list_projects(self, **kwargs: Any) -> list[SimpleNamespace]:
+            return [_fake("only", datetime(2026, 11, 1), 0.7)]
+
+    latest, previous = fetch_experiment_scores(FakeClient(), "ds")
+    assert latest is not None and latest.scores == {"m": 0.7}
+    assert previous is None
+
+
+def test_missing_cli_reports_clear_error(capsys: Any, monkeypatch: Any) -> None:
+    monkeypatch.setenv("LANGSMITH_CLI", "Z:/definitely/missing/langsmith.exe")
+    assert upload_evaluators.main([]) == 1
+    assert "set LANGSMITH_CLI" in capsys.readouterr().out

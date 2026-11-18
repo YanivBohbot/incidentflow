@@ -71,7 +71,11 @@ def _environment() -> dict[str, str]:
 
 
 def _run(command: list[str], env: dict[str, str]) -> int:
-    return subprocess.run(command, env=env, cwd=API_DIR, check=False).returncode
+    try:
+        return subprocess.run(command, env=env, cwd=API_DIR, check=False).returncode
+    except FileNotFoundError:
+        print(f"langsmith CLI not found ({command[0]}) - set LANGSMITH_CLI to its path.")
+        return 1
 
 
 def main(argv: Sequence[str] | None = None, runner: Runner = _run) -> int:

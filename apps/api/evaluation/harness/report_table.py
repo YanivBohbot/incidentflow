@@ -1,6 +1,7 @@
 """Fetch the latest LangSmith experiment scores and render them as a Markdown summary."""
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from evaluation.harness.runner import DATASETS
@@ -15,7 +16,7 @@ class ExperimentScores:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-def _project_scores(client: Any, dataset: str, project: Any) -> ExperimentScores:
+def _project_scores(dataset: str, project: Any) -> ExperimentScores:
     stats = project.feedback_stats or {}
     scores = {
         key: float(value["avg"])
@@ -27,6 +28,13 @@ def _project_scores(client: Any, dataset: str, project: Any) -> ExperimentScores
     return ExperimentScores(dataset, project.name, url, scores, dict(metadata))
 
 
+def _sort_time(value: datetime | None) -> datetime:
+    """Sort key tolerant of missing and naive start times (naive is treated as UTC)."""
+    if value is None:
+        return datetime.min.replace(tzinfo=UTC)
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+
 def fetch_experiment_scores(
     client: Any, dataset: str
 ) -> tuple[ExperimentScores | None, ExperimentScores | None]:
@@ -34,8 +42,8 @@ def fetch_experiment_scores(
     projects = list(
         client.list_projects(reference_dataset_name=dataset, include_stats=True, limit=50)
     )
-    projects.sort(key=lambda project: project.start_time, reverse=True)
-    converted = [_project_scores(client, dataset, project) for project in projects[:2]]
+    projects.sort(key=lambda project: _sort_time(project.start_time), reverse=True)
+    converted = [_project_scores(dataset, project) for project in projects[:2]]
     converted += [None] * (2 - len(converted))
     return converted[0], converted[1]
 

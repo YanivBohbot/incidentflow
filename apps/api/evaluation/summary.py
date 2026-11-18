@@ -3,9 +3,9 @@
 Run from ``apps/api``: ``python -m evaluation.summary``.
 """
 
+import os
 from pathlib import Path
 
-from dotenv import load_dotenv
 from langsmith import Client
 
 from evaluation.harness.report_table import (
@@ -14,13 +14,14 @@ from evaluation.harness.report_table import (
     render_summary,
 )
 from evaluation.harness.runner import DATASETS
+from evaluation.upload_evaluators import _environment
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OUTPUT_PATH = REPO_ROOT / "docs" / "evaluation.md"
 
 
 def main() -> int:
-    load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+    os.environ.update({k: v for k, v in _environment().items() if k.startswith("LANGSMITH_")})
     client = Client()
     latest: list[ExperimentScores] = []
     previous: dict[str, ExperimentScores] = {}
