@@ -1,5 +1,6 @@
 """Record an investigation run's trajectory: delegations, nested tool calls, node path, interrupts."""
 
+import json
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -89,8 +90,28 @@ class TrajectoryRecorder(AsyncCallbackHandler):
             if tool not in DELEGATION_NAMES
         ]
 
+    @property
+    def delegation_calls(self) -> list[dict[str, Any]]:
+        """Top-level specialist delegations in start order, shaped like the fixture call log."""
+        return [
+            {"tool": tool, "args": _json_safe(args)}
+            for run_id, tool, args in self._calls
+            if tool in DELEGATION_NAMES and self._agent_of(run_id) is None
+        ]
+
     def as_outputs(self) -> dict[str, Any]:
         return {"nested_tool_calls": self.nested_tool_calls}
+
+
+def _json_safe(args: dict[str, Any]) -> dict[str, Any]:
+    safe = {}
+    for key, value in args.items():
+        try:
+            json.dumps(value)
+        except (TypeError, ValueError):
+            continue
+        safe[key] = value
+    return safe
 
 
 def _classify_interrupt(value: Any) -> dict[str, Any]:
@@ -132,7 +153,7 @@ async def run_workflow_recorded(
     values = (await workflow.aget_state(config)).values
     return {
         "report": _report_json(values.get("report")),
-        "delegations": call_log,
+        "delegations": list(call_log) if call_log else recorder.delegation_calls,
         **recorder.as_outputs(),
         "graph_path": graph_path,
         "interrupts": interrupts,

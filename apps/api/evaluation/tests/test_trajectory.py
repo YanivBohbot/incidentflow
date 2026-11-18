@@ -140,3 +140,14 @@ async def test_run_workflow_recorded_classifies_jira_write_interrupt() -> None:
 
     out = await run_workflow_recorded(_two_node_graph(a), "request", [])
     assert out["interrupts"] == [{"kind": "jira_write", "tool": "createJiraIssue"}]
+
+
+@pytest.mark.anyio
+async def test_run_workflow_recorded_derives_delegations_from_recorder_when_log_empty() -> None:
+    async def a(state: State) -> dict[str, Any]:
+        await ask_knowledge.ainvoke({"incident_context": "c"}, ensure_config())
+        return {}
+
+    out = await run_workflow_recorded(_two_node_graph(a), "request", [])
+    assert out["delegations"] == [{"tool": "ask_knowledge", "args": {"incident_context": "c"}}]
+    assert [c["tool"] for c in out["nested_tool_calls"]] == ["searchJiraIssuesUsingJql"]

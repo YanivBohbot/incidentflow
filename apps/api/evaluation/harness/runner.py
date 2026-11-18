@@ -51,8 +51,8 @@ def make_run_function(
 ) -> Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]:
     """Build the function LangSmith calls per example; every call gets its own log and workflow.
 
-    In live mode the real delegation tools run and do not write to the call log, so
-    ``delegations`` stays empty (the recorder only exposes nested, non-delegation calls).
+    In live mode the real delegation tools do not write to the call log, so the recorder's
+    top-level delegation calls fill ``delegations`` instead.
     """
     scenarios = {scenario.name: scenario for scenario in _SCENARIOS[suite]}
 
@@ -68,10 +68,14 @@ def make_run_function(
     return run
 
 
-def _print_scores(totals: dict[str, list[float]]) -> None:
-    print("\nAverage scores:")
-    for key, values in totals.items():
-        print(f"  {key}: {sum(values) / len(values):.2f}")
+def _print_scores(totals: dict[str, list[float]], errors: dict[str, int]) -> None:
+    print("
+Average scores:")
+    for key in sorted(totals.keys() | errors.keys()):
+        values = totals.get(key, [])
+        mean = f"{sum(values) / len(values):.2f}" if values else "n/a"
+        suffix = f" ({errors[key]} errored)" if errors.get(key) else ""
+        print(f"  {key}: {mean}{suffix}")
 
 
 async def run_suite(
@@ -108,12 +112,16 @@ async def run_suite(
         client=client,
     )
     totals: dict[str, list[float]] = {}
+    errors: dict[str, int] = {}
     async for row in results:
         scenario = row["example"].metadata.get("scenario")
         scores = {r.key: r.score for r in row["evaluation_results"]["results"]}
         print(f"{scenario}: {scores}")
         for key, value in scores.items():
-            totals.setdefault(key, []).append(value or 0)
-    _print_scores(totals)
+            if value is None:
+                errors[key] = errors.get(key, 0) + 1
+            else:
+                totals.setdefault(key, []).append(value)
+    _print_scores(totals, errors)
     print(f"\nExperiment: {results.experiment_name}")
     return results.experiment_name

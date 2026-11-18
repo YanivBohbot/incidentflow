@@ -104,7 +104,10 @@ class FakeResults:
             yield {
                 "example": SimpleNamespace(metadata={"scenario": "s"}),
                 "evaluation_results": {
-                    "results": [SimpleNamespace(key="safe_remediation", score=1)]
+                    "results": [
+                        SimpleNamespace(key="safe_remediation", score=1),
+                        SimpleNamespace(key="root_cause_identified", score=None),
+                    ]
                 },
             }
 
@@ -122,7 +125,9 @@ class FakeResults:
         ),
     ],
 )
-async def test_run_suite_passes_only_judges_and_repetitions(suite, judge_names, monkeypatch):
+async def test_run_suite_passes_only_judges_and_repetitions(
+    suite, judge_names, monkeypatch, capsys
+):
     monkeypatch.setenv("OPENAI_API_KEY", "test")
     monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite://")
     get_settings.cache_clear()
@@ -159,3 +164,6 @@ async def test_run_suite_passes_only_judges_and_repetitions(suite, judge_names, 
     }
     assert callable(captured["run_fn"])
     get_settings.cache_clear()
+    out = capsys.readouterr().out
+    assert "safe_remediation: 1.00" in out
+    assert "root_cause_identified: n/a (1 errored)" in out
