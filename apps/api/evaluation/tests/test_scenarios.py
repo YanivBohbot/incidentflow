@@ -8,6 +8,7 @@ from evaluation.scenarios.catalog import (
     report_example,
     trajectory_example,
 )
+from evaluation.scenarios.scenario_model import SOURCE_ALIASES
 from evaluation.scenarios.supervisor_routing import SUPERVISOR_ROUTING_SCENARIOS
 
 ALL_TOOLS = frozenset(FINDING_MODELS)
@@ -122,6 +123,8 @@ def test_source_tools_map_evidence_sources_tools_and_aliases() -> None:
     for scenario in REPORT_SCENARIOS:
         for tool, raw in scenario.frozen_findings.items():
             assert scenario.source_tools[tool] == tool
+            for alias in SOURCE_ALIASES[tool]:
+                assert scenario.source_tools[alias] == tool, (scenario.name, alias)
             for source in _evidence_sources(raw):
                 assert scenario.source_tools[source] == tool, (scenario.name, source)
         assert set(scenario.source_tools.values()) <= set(scenario.frozen_findings)
@@ -135,3 +138,10 @@ def test_routing_scenarios_are_derived_from_the_trajectory_catalog() -> None:
         source: EvaluationScenario = by_name[routing.name]
         assert routing.request == source.incident_request
         assert routing.expected_tools == source.required_specialists
+
+
+def test_frozen_evidence_is_labelled_simulated() -> None:
+    for scenario in ALL_SCENARIOS:
+        for raw in scenario.frozen_findings.values():
+            for item in json.loads(raw).get("evidence", []):
+                assert item["source_status"] == "simulated", scenario.name

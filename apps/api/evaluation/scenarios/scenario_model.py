@@ -43,7 +43,7 @@ def finding(tool: str, **fields: Any) -> str:
 
 
 def evidence(source: str, detail: str) -> InvestigationEvidence:
-    return InvestigationEvidence(source=source, detail=detail, source_status="live")
+    return InvestigationEvidence(source=source, detail=detail, source_status="simulated")
 
 
 def source_tools_for(findings: Mapping[str, str]) -> dict[str, str]:

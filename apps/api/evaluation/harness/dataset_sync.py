@@ -1,5 +1,6 @@
 """Idempotent sync of scenario examples into a LangSmith dataset (never deletes examples)."""
 
+import warnings
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -30,10 +31,17 @@ def sync_dataset(
         client.create_dataset(name, description=description)
         existing: dict[str, Any] = {}
     else:
-        existing = {
-            (example.metadata or {}).get("scenario"): example
-            for example in client.list_examples(dataset_name=name)
-        }
+        existing = {}
+        for example in client.list_examples(dataset_name=name):
+            scenario = (example.metadata or {}).get("scenario")
+            if scenario in existing:
+                warnings.warn(
+                    f"Dataset {name!r} has duplicate examples for scenario {scenario!r}; "
+                    "keeping the first.",
+                    stacklevel=2,
+                )
+                continue
+            existing[scenario] = example
 
     to_create: list[dict[str, Any]] = []
     updated = unchanged = 0

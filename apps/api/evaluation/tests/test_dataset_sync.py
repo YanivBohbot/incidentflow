@@ -1,3 +1,4 @@
+import warnings
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
@@ -108,3 +109,14 @@ def test_sync_ignores_extra_server_side_metadata_keys() -> None:
     result = sync_dataset(client, "ds", "d", [_spec("a")])
 
     assert result.unchanged == 1 and client.tag_calls == []
+
+
+def test_sync_warns_about_duplicate_examples_and_keeps_the_first() -> None:
+    client = FakeClient([_spec("a"), _spec("a", {"required_specialists": []})])
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = sync_dataset(client, "ds", "d", [_spec("a")])
+
+    assert result == SyncResult(created=0, updated=0, unchanged=1)
+    assert any("duplicate" in str(w.message) and "'a'" in str(w.message) for w in caught)
