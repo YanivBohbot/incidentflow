@@ -331,3 +331,22 @@ def test_tool_selector_keeps_every_tool_when_only_invented_names_were_selected()
     )
 
     assert {tool.name for tool in request.tools} == set(names)
+
+
+def test_supervisor_prompt_calls_no_specialist_for_requests_that_are_not_incidents() -> None:
+    assert "does not describe an incident" in SUPERVISOR_SYSTEM_PROMPT
+    assert "call no specialist" in SUPERVISOR_SYSTEM_PROMPT
+    assert "Select no tool when the request does not describe an incident" in (
+        supervisor_module.TOOL_SELECTION_SYSTEM_PROMPT
+    )
+
+
+def test_supervisor_prompt_keeps_an_unverified_origin_out_of_root_cause() -> None:
+    assert "Set root_cause only when observed evidence supports the origin" in (
+        SUPERVISOR_SYSTEM_PROMPT
+    )
+    assert "most likely origin" not in SUPERVISOR_SYSTEM_PROMPT
+    assert "root cause cannot be determined from the available evidence" in (
+        SUPERVISOR_SYSTEM_PROMPT
+    )
+

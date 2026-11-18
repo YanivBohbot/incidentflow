@@ -41,6 +41,8 @@ TOOL_SELECTION_SYSTEM_PROMPT = (
     "code changes, and ask_cloudwatch for production alarms, metrics, and logs such as HTTP 5xx "
     "errors or latency. "
     "Use these exact tool names; never invent another name. "
+    "Select no tool when the request does not describe an incident, such as a greeting or a "
+    "question about what the assistant can do. "
     "Select all relevant tools when the request requires evidence from all sources. "
     "Do not select a tool merely because it is available."
 )
