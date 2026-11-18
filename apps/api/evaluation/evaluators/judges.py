@@ -23,6 +23,8 @@ NO_REPORT = "No report was produced, so there is nothing to grade."
 
 
 class Grade(TypedDict):
+    """Structured verdict returned by the judge model."""
+
     reasoning: Annotated[str, ..., "Short justification for the verdict."]
     passed: Annotated[bool, ..., "True only when the criterion is fully met."]
 
@@ -108,7 +110,10 @@ def build_judges(model: BaseChatModel) -> list[Callable]:
             f"Report hypotheses: {report.get('hypotheses')}\n"
             "Pass only if the report identifies the expected root cause as its primary "
             "conclusion, even with different wording. Fail if it is absent, only mentioned as "
-            "an unlikely possibility, or a different cause is presented as primary."
+            "an unlikely possibility, or a different cause is presented as primary. "
+            "If the expected root cause states that the cause cannot be determined from the "
+            "available evidence, pass only when the report says so and does not present a "
+            "specific cause as established."
         )
 
     async def report_grounded_in_findings(run, example) -> dict[str, Any]:

@@ -150,3 +150,11 @@ def test_prompt_hash_changes_with_prompt(monkeypatch) -> None:
     assert len(before) == 12
     monkeypatch.setattr(supervisor, "SUPERVISOR_SYSTEM_PROMPT", "changed")
     assert judges.prompt_hash() != before
+
+
+@pytest.mark.anyio
+async def test_root_cause_prompt_handles_undeterminable_cause() -> None:
+    model = FakeModel({"reasoning": "ok", "passed": True})
+    await by_name(model)["root_cause_identified"](RUN, EXAMPLE)
+    assert "cannot be determined from the available evidence" in model.prompts[0]
+    assert "does not present a specific cause as established" in model.prompts[0]
