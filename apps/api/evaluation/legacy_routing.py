@@ -9,7 +9,7 @@ from langchain.agents import create_agent
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
 
-from incidentflow.agent.evaluation.supervisor_routing import (
+from evaluation.scenarios.supervisor_routing import (
     SUPERVISOR_ROUTING_SCENARIOS,
     assess_delegations,
 )

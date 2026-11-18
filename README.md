@@ -402,13 +402,13 @@ npm run lint
 npm run build
 ```
 
-`apps/api/scripts/` also contains evaluation scripts that run against real services
-(`evaluate_supervisor_routing.py`, `evaluate_knowledge_retrieval.py`), plus run and verify scripts
+`apps/api/evaluation/` holds the evaluation scripts that run against real services
+(`legacy_routing.py`, `retrieval.py`); `apps/api/scripts/` has run and verify scripts
 for each live integration.
 
 ### LangSmith evaluation
 
-`scripts/evaluate_investigation_reports.py` runs the real investigation workflow on a LangSmith
+`evaluation/legacy_reports.py` runs the real investigation workflow on a LangSmith
 dataset of incidents with known root causes, and scores every report as a LangSmith experiment:
 
 | Evaluator                     | Type         | Checks                                                     |
@@ -421,8 +421,8 @@ dataset of incidents with known root causes, and scores every report as a LangSm
 
 ```bash
 cd apps/api
-python scripts/evaluate_investigation_reports.py                       # creates the dataset if missing
-python scripts/evaluate_investigation_reports.py --experiment-prefix v2  # compare in LangSmith
+python -m evaluation.legacy_reports                       # creates the dataset if missing
+python -m evaluation.legacy_reports --experiment-prefix v2  # compare in LangSmith
 ```
 
 Jira, MongoDB, and GitHub are disabled by default, so the experiment needs only OpenAI, Pinecone

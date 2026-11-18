@@ -1,4 +1,4 @@
-from incidentflow.agent.evaluation.supervisor_routing import (
+from evaluation.scenarios.supervisor_routing import (
     SUPERVISOR_ROUTING_SCENARIOS,
     assess_delegations,
 )

@@ -17,7 +17,7 @@ python -m incidentflow.worker                 # runs queued investigations; need
 pytest -q                                     # full suite (CI sets LANGSMITH_TRACING=false)
 pytest tests/test_investigation_workflow.py   # one file
 pytest tests/test_investigation_workflow.py::test_<name>   # one test
-ruff check src tests scripts                  # CI lints scripts/ too
+ruff check src tests scripts evaluation       # CI lints scripts/ and evaluation/ too
 ruff format --check src tests
 alembic upgrade head
 alembic revision -m "add_incident_assignee"   # name revisions after the change

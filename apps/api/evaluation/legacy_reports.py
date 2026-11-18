@@ -44,7 +44,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 from langsmith import Client, aevaluate
 
-from incidentflow.agent.evaluation.investigation_reports import (
+from evaluation.scenarios.investigation_reports import (
     INVESTIGATION_REPORT_SCENARIOS,
     consulted_required_specialists,
     evidence_is_attributed,

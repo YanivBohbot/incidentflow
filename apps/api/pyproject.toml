@@ -54,12 +54,17 @@ dev = [
     "httpx",
     "ruff",
 ]
+eval = [
+    "agentevals>=0.0.9,<0.1",
+    "openevals>=0.2.5,<0.3",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "evaluation/tests"]
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100
