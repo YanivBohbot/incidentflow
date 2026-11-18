@@ -106,6 +106,17 @@ FAIL_CASES = [
         ),
         {},
     ),
+    (
+        "evidence_status_matches_findings",
+        _variant(
+            report=_report(evidence=[{"source": "GitHub", "detail": "x", "source_status": "live"}])
+        ),
+        {
+            "frozen_findings": {
+                "ask_github": '{"evidence": [{"source": "GitHub", "source_status": "simulated"}]}'
+            }
+        },
+    ),
 ]
 
 
@@ -195,7 +206,7 @@ def test_code_evaluators_import_only_the_standard_library() -> None:
 
 def test_evaluator_name_tuples_match_defined_functions() -> None:
     assert len(code.TRAJECTORY_CODE_EVALUATORS) == 4
-    assert len(code.REPORT_CODE_EVALUATORS) == 5
+    assert len(code.REPORT_CODE_EVALUATORS) == 6
     assert all(isinstance(n, str) for n in ALL_CODE_NAMES)
 
 
@@ -250,3 +261,37 @@ def test_source_aliases_include_specialist_agent_names() -> None:
 
     assert "Data Intelligence" in SOURCE_ALIASES["ask_data_intelligence"]
     assert "IT Operations" in SOURCE_ALIASES["ask_it_operations"]
+
+
+def _status_reference(*statuses: str) -> dict:
+    finding = {
+        "evidence": [{"source": "GitHub", "detail": "d", "source_status": s} for s in statuses]
+    }
+    import json as _json
+
+    return {**FULL_REFERENCE, "frozen_findings": {"ask_github": _json.dumps(finding)}}
+
+
+def test_status_check_fails_when_simulated_finding_evidence_is_reported_live() -> None:
+    outputs = _evidence({"source": "GitHub commits", "detail": "abc", "source_status": "live"})
+    result = _call(code.evidence_status_matches_findings, outputs, _status_reference("simulated"))
+    assert result["score"] == 0
+    assert "GitHub commits" in result["comment"]
+
+
+def test_status_check_passes_when_report_copies_the_finding_status() -> None:
+    outputs = _evidence({"source": "GitHub", "detail": "abc", "source_status": "simulated"})
+    result = _call(code.evidence_status_matches_findings, outputs, _status_reference("simulated"))
+    assert result["score"] == 1
+
+
+def test_status_check_accepts_live_when_the_finding_was_live() -> None:
+    outputs = _evidence({"source": "GitHub", "detail": "abc", "source_status": "live"})
+    result = _call(code.evidence_status_matches_findings, outputs, _status_reference("live"))
+    assert result["score"] == 1
+
+
+def test_status_check_ignores_sources_without_a_frozen_finding() -> None:
+    outputs = _evidence({"source": "Jira", "detail": "x", "source_status": "live"})
+    result = _call(code.evidence_status_matches_findings, outputs, _status_reference("simulated"))
+    assert result["score"] == 1

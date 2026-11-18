@@ -350,3 +350,8 @@ def test_supervisor_prompt_keeps_an_unverified_origin_out_of_root_cause() -> Non
         SUPERVISOR_SYSTEM_PROMPT
     )
 
+
+def test_supervisor_prompt_copies_evidence_status_from_findings() -> None:
+    assert "Copy each evidence item's source_status exactly" in SUPERVISOR_SYSTEM_PROMPT
+    assert "never change simulated to live" in SUPERVISOR_SYSTEM_PROMPT
+

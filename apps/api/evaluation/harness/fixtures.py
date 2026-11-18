@@ -42,7 +42,12 @@ _REQUIRED_EXTRAS: dict[str, dict[str, Any]] = {
 
 def unavailable_finding_json(tool_name: str) -> str:
     """Return a zero-confidence finding of the tool's model for a source with no fixture."""
-    summary = f"{_SOURCE_NAMES[tool_name]} is unavailable in this evaluation scenario."
+    # Same wording as the production tools, so InvestigationReport's safety net that marks
+    # outage evidence "unavailable" behaves in evaluations exactly as it does in production.
+    if tool_name == "ask_knowledge":
+        summary = "Knowledge retrieval was unavailable during this investigation."
+    else:
+        summary = f"Live {_SOURCE_NAMES[tool_name]} MCP was unavailable during this investigation."
     model = FINDING_MODELS[tool_name]
     return model(
         summary=summary, confidence=0, **_REQUIRED_EXTRAS.get(tool_name, {})

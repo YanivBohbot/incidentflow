@@ -17,6 +17,7 @@ REPORT_CODE_EVALUATORS = (
     "evidence_attributed",
     "evidence_from_delegated_sources",
     "no_live_evidence_from_unavailable",
+    "evidence_status_matches_findings",
 )
 
 
@@ -207,3 +208,39 @@ def no_live_evidence_from_unavailable(run, example):
         if tool in unavailable:
             bad.append(source)
     return {"score": 0 if bad else 1, "comment": f"live_from_unavailable={bad}"}
+
+
+def evidence_status_matches_findings(run, example):
+    """Live evidence must come from a finding that itself reported live evidence."""
+    import json
+
+    outputs = run.get("outputs") if isinstance(run, dict) else getattr(run, "outputs", None)
+    reference = (
+        example.get("outputs") if isinstance(example, dict) else getattr(example, "outputs", None)
+    ) or {}
+    if not outputs:
+        return {"score": 0, "comment": "no outputs"}
+    report = outputs.get("report")
+    if not report:
+        return {"score": 0, "comment": "no report"}
+    source_tools = reference.get("source_tools") or {}
+    statuses = {}
+    for tool, raw in (reference.get("frozen_findings") or {}).items():
+        try:
+            finding = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        statuses[tool] = {item.get("source_status") for item in finding.get("evidence") or []}
+    upgraded = []
+    for item in report.get("evidence") or []:
+        if item.get("source_status") != "live":
+            continue
+        source = item.get("source")
+        tool = source_tools.get(source)
+        if tool is None:
+            text = str(source or "").lower()
+            matches = [key for key in source_tools if key and str(key).lower() in text]
+            tool = source_tools[max(matches, key=len)] if matches else None
+        if tool in statuses and "live" not in statuses[tool]:
+            upgraded.append(source)
+    return {"score": 0 if upgraded else 1, "comment": f"relabelled_live={upgraded}"}

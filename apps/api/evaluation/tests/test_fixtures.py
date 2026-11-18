@@ -49,7 +49,7 @@ def test_unavailable_finding_validates_against_every_finding_model() -> None:
     for name, model in FINDING_MODELS.items():
         finding = model.model_validate_json(unavailable_finding_json(name))
         assert finding.confidence == 0
-        assert finding.summary.endswith(" is unavailable in this evaluation scenario.")
+        assert finding.summary.endswith(" was unavailable during this investigation.")
 
 
 def test_build_investigation_supervisor_accepts_injected_tools(
@@ -76,3 +76,16 @@ async def test_fixture_delegations_accept_every_optional_argument_of_the_real_to
         await stubs[real.name].ainvoke(args)
         assert log[-1] == {"tool": real.name, "args": args}
     assert {"service_name", "incident_id"} <= set(log[-1]["args"])
+
+
+def test_unavailable_placeholder_is_caught_by_the_report_safety_net() -> None:
+    from incidentflow.agent.findings import InvestigationEvidence, InvestigationReport
+
+    for name in FINDING_MODELS:
+        summary = json.loads(unavailable_finding_json(name))["summary"]
+        report = InvestigationReport(
+            summary="s",
+            evidence=[InvestigationEvidence(source=name, detail=summary, source_status="live")],
+            confidence=0.1,
+        )
+        assert report.evidence[0].source_status == "unavailable", summary
