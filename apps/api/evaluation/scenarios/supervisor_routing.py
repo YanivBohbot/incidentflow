@@ -4,6 +4,8 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from evaluation.scenarios.catalog import TRAJECTORY_SCENARIOS
+
 
 @dataclass(frozen=True)
 class SupervisorRoutingScenario:
@@ -26,68 +28,28 @@ class RoutingAssessment:
 
     @property
     def passed(self) -> bool:
-        return not (
-            self.unexpected_tools or self.missing_tools or self.excessively_repeated_tools
-        )
+        return not (self.unexpected_tools or self.missing_tools or self.excessively_repeated_tools)
 
 
-SUPERVISOR_ROUTING_SCENARIOS = (
+_ROUTING_SCENARIO_NAMES = (
+    "knowledge_only",
+    "mongodb_only",
+    "jira_only",
+    "github_only",
+    "cloudwatch_only",
+    "full_investigation",
+)
+
+# Derived from the trajectory catalog so requests and expectations have one source of truth.
+SUPERVISOR_ROUTING_SCENARIOS = tuple(
     SupervisorRoutingScenario(
-        name="knowledge_only",
-        request=(
-            "Retrieve the documented procedure for investigating MongoDB connection pool exhaustion. "
-            "Do not inspect Jira, live operational events, or source-control changes."
-        ),
-        expected_tools=frozenset({"ask_knowledge"}),
-    ),
-    SupervisorRoutingScenario(
-        name="mongodb_only",
-        request=(
-            "Inspect live MongoDB operational events for Payment API HTTP 500 errors. "
-            "Do not inspect Jira, documentation, or source-control changes."
-        ),
-        expected_tools=frozenset({"ask_data_intelligence"}),
-    ),
-    SupervisorRoutingScenario(
-        name="jira_only",
-        request=(
-            "Read the Jira incident INC-204 and summarize its priority, status, and comments. "
-            "Do not inspect operational events, documentation, or source-control changes."
-        ),
-        expected_tools=frozenset({"ask_it_operations"}),
-    ),
-    SupervisorRoutingScenario(
-        name="github_only",
-        request=(
-            "Review recent commits and pull requests for the Payment API repository. "
-            "Do not inspect Jira, operational events, or documentation."
-        ),
-        expected_tools=frozenset({"ask_github"}),
-    ),
-    SupervisorRoutingScenario(
-        name="cloudwatch_only",
-        request=(
-            "Check the CloudWatch alarms, HTTP 5xx metrics, and error logs of payment-service. "
-            "Do not inspect Jira, MongoDB events, documentation, or source-control changes."
-        ),
-        expected_tools=frozenset({"ask_cloudwatch"}),
-    ),
-    SupervisorRoutingScenario(
-        name="full_investigation",
-        request=(
-            "Investigate Jira incident INC-204 end to end: read its ticket context, inspect the "
-            "corresponding MongoDB events, find similar response procedures, and review relevant "
-            "recent GitHub changes."
-        ),
-        expected_tools=frozenset(
-            {
-                "ask_it_operations",
-                "ask_data_intelligence",
-                "ask_knowledge",
-                "ask_github",
-            }
-        ),
-    ),
+        name=scenario.name,
+        request=scenario.incident_request,
+        expected_tools=scenario.required_specialists,
+    )
+    for name in _ROUTING_SCENARIO_NAMES
+    for scenario in TRAJECTORY_SCENARIOS
+    if scenario.name == name
 )
 
 
