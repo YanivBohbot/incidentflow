@@ -69,8 +69,7 @@ def make_run_function(
 
 
 def _print_scores(totals: dict[str, list[float]], errors: dict[str, int]) -> None:
-    print("
-Average scores:")
+    print("\nAverage scores:")
     for key in sorted(totals.keys() | errors.keys()):
         values = totals.get(key, [])
         mean = f"{sum(values) / len(values):.2f}" if values else "n/a"
