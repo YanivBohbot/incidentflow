@@ -295,3 +295,9 @@ def test_status_check_ignores_sources_without_a_frozen_finding() -> None:
     outputs = _evidence({"source": "Jira", "detail": "x", "source_status": "live"})
     result = _call(code.evidence_status_matches_findings, outputs, _status_reference("simulated"))
     assert result["score"] == 1
+
+
+def test_status_check_skips_findings_that_declare_no_evidence_status() -> None:
+    outputs = _evidence({"source": "GitHub", "detail": "abc", "source_status": "live"})
+    reference = {**FULL_REFERENCE, "frozen_findings": {"ask_github": '{"summary": "no evidence"}'}}
+    assert _call(code.evidence_status_matches_findings, outputs, reference)["score"] == 1

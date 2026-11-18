@@ -16,16 +16,17 @@ Run settings: model: gpt-4.1-mini, judge_model: gpt-4.1, prompt_hash: 127cb5e718
 
 ## incidentflow-investigation-reports
 
-Latest experiment: [reports-3be721cc](https://smith.langchain.com/o/c920c557-3266-4d89-b818-f7e709fe4965/projects/p/c4ca63d2-3505-47ac-a138-1a3aef154817)
-Previous experiment: [reports-af351fbb](https://smith.langchain.com/o/c920c557-3266-4d89-b818-f7e709fe4965/projects/p/4e4bd3ca-7ce6-483d-94f4-cb8f9fd0a9d0)
-Run settings: model: gpt-4.1-mini, judge_model: gpt-4.1, prompt_hash: 127cb5e718c0
+Latest experiment: [reports-a888848c](https://smith.langchain.com/o/c920c557-3266-4d89-b818-f7e709fe4965/projects/p/99480a8a-403f-45ca-bb1c-cbe9b1dea812)
+Previous experiment: [reports-3be721cc](https://smith.langchain.com/o/c920c557-3266-4d89-b818-f7e709fe4965/projects/p/c4ca63d2-3505-47ac-a138-1a3aef154817)
+Run settings: model: gpt-4.1-mini, judge_model: gpt-4.1, prompt_hash: 7de94696dac1
 
 | Metric | Latest | Previous | Δ |
 | --- | --- | --- | --- |
 | evidence_attributed | 1.00 | 1.00 | +0.00 |
-| evidence_from_delegated_sources | 1.00 | 0.85 | +0.15 |
+| evidence_from_delegated_sources | 1.00 | 1.00 | +0.00 |
+| evidence_status_matches_findings | 0.89 | — | — |
 | graph_path_valid | 1.00 | 1.00 | +0.00 |
-| no_live_evidence_from_unavailable | 0.96 | 1.00 | -0.04 |
+| no_live_evidence_from_unavailable | 1.00 | 0.96 | +0.04 |
 | report_grounded_in_findings | 1.00 | 1.00 | +0.00 |
 | report_has_required_fields | 1.00 | 1.00 | +0.00 |
 | root_cause_identified | 1.00 | 1.00 | +0.00 |

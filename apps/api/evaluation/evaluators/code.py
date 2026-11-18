@@ -230,7 +230,11 @@ def evidence_status_matches_findings(run, example):
             finding = json.loads(raw)
         except (TypeError, ValueError):
             continue
-        statuses[tool] = {item.get("source_status") for item in finding.get("evidence") or []}
+        declared = {item.get("source_status") for item in finding.get("evidence") or []}
+        declared.discard(None)
+        # A finding that declares no status (e.g. CloudWatchFinding) cannot be checked.
+        if declared:
+            statuses[tool] = declared
     upgraded = []
     for item in report.get("evidence") or []:
         if item.get("source_status") != "live":
