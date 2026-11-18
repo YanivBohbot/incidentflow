@@ -535,25 +535,26 @@ _UNKNOWN_GITHUB = finding(
 
 
 REPORT_SCENARIOS: tuple[EvaluationScenario, ...] = (
-    # Required: the request cites "MongoDB pool timeout events" (MongoDB events) and a pool
-    # exhaustion procedure is the natural runbook lookup (knowledge).
+    # Required: knowledge only. The supervisor prompt assigns ask_knowledge to "similar incidents
+    # and procedures", warranted for any real incident. "MongoDB pool timeout events" is an
+    # already-known finding, so MongoDB is not required (its finding is optional evidence).
     _legacy(
         "EVAL-PAY-001",
         {KNOWLEDGE: _PAY_KNOWLEDGE, MONGO: _PAY_MONGO},
-        {MONGO, KNOWLEDGE},
+        {KNOWLEDGE},
         ("Payment API", "incidentflow-payment-test-001"),
     ),
-    # Required: only the runbook; the text names no other source (MongoDB findings are optional
-    # extra evidence the supervisor may choose to look at).
+    # Required: knowledge only, per the supervisor prompt's "similar incidents and procedures"
+    # policy for real incidents; the text names no other source (MongoDB finding is optional).
     _legacy(
         "EVAL-AUTH-002",
         {KNOWLEDGE: _AUTH_KNOWLEDGE, MONGO: _AUTH_MONGO},
         {KNOWLEDGE},
         ("Identity API", "incidentflow-auth-test-002"),
     ),
-    # Required: "right after this morning's deployment" warrants GitHub (what changed) and the
-    # runbook (knowledge). "Logs report ..." already states the log finding, so CloudWatch is
-    # not required (its finding is optional extra evidence).
+    # Required: GitHub, since "after this morning's deployment" warrants a code-change review, and
+    # knowledge per the supervisor prompt's "similar incidents and procedures" policy.
+    # "Logs report ..." already states the log finding, so CloudWatch is not required.
     _legacy(
         "EVAL-CODE-003",
         {KNOWLEDGE: _CODE_KNOWLEDGE, GITHUB: _CODE_GITHUB, CLOUDWATCH: _CODE_CLOUDWATCH},
