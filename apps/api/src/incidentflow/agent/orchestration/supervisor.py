@@ -11,6 +11,7 @@ from langchain.agents.middleware import (
 )
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 
 from incidentflow.agent.findings import InvestigationReport
@@ -23,6 +24,14 @@ from incidentflow.agent.tools.github_tools import ask_github
 from incidentflow.agent.tools.it_operations_tools import ask_it_operations
 from incidentflow.agent.tools.knowledge_tools import ask_knowledge
 from incidentflow.core.config import get_settings
+
+DELEGATION_TOOLS: tuple[BaseTool, ...] = (
+    ask_it_operations,
+    ask_data_intelligence,
+    ask_knowledge,
+    ask_github,
+    ask_cloudwatch,
+)
 
 TOOL_SELECTION_SYSTEM_PROMPT = (
     "Select the specialist delegations necessary to investigate this incident. "
@@ -72,11 +81,12 @@ def build_supervisor_middleware(
     ]
 
 
-def build_investigation_supervisor():
+def build_investigation_supervisor(tools: list[BaseTool] | None = None):
     """Create the supervisor agent with its five delegation tools and safety middleware.
 
     Extra calls are blocked with "continue" so the supervisor still returns a report,
     and ToolStrategy sends schema errors back so it can fix an incomplete report.
+    Pass ``tools`` to replace the real delegations (for example with evaluation fixtures).
     """
     settings = get_settings()
 
@@ -88,13 +98,7 @@ def build_investigation_supervisor():
 
     return create_agent(
         model=model,
-        tools=[
-            ask_it_operations,
-            ask_data_intelligence,
-            ask_knowledge,
-            ask_github,
-            ask_cloudwatch,
-        ],
+        tools=list(DELEGATION_TOOLS) if tools is None else tools,
         system_prompt=SUPERVISOR_SYSTEM_PROMPT,
         name=INVESTIGATION_SUPERVISOR.technical_name,
         middleware=build_supervisor_middleware(model),
