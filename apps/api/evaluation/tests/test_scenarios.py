@@ -127,7 +127,15 @@ def test_source_tools_map_evidence_sources_tools_and_aliases() -> None:
                 assert scenario.source_tools[alias] == tool, (scenario.name, alias)
             for source in _evidence_sources(raw):
                 assert scenario.source_tools[source] == tool, (scenario.name, source)
-        assert set(scenario.source_tools.values()) <= set(scenario.frozen_findings)
+        assert set(scenario.source_tools.values()) <= set(SOURCE_ALIASES)
+
+
+def test_source_tools_include_unavailable_tools_the_report_may_cite() -> None:
+    for scenario in REPORT_SCENARIOS:
+        for tool in set(SOURCE_ALIASES) - set(scenario.frozen_findings):
+            assert scenario.source_tools[tool] == tool, (scenario.name, tool)
+            for alias in SOURCE_ALIASES[tool]:
+                assert scenario.source_tools[alias] == tool, (scenario.name, alias)
 
 
 def test_routing_scenarios_are_derived_from_the_trajectory_catalog() -> None:

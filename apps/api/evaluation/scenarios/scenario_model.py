@@ -53,6 +53,11 @@ def source_tools_for(findings: Mapping[str, str]) -> dict[str, str]:
         mapping[tool] = tool
         mapping.update({alias: tool for alias in SOURCE_ALIASES[tool]})
         mapping.update({item["source"]: tool for item in json.loads(raw).get("evidence", [])})
+    # Tools without a frozen finding return an "unavailable" placeholder that reports still cite.
+    for tool, aliases in SOURCE_ALIASES.items():
+        if tool not in findings:
+            mapping[tool] = tool
+            mapping.update({alias: tool for alias in aliases})
     return mapping
 
 
