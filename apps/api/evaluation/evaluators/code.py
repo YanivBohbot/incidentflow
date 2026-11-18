@@ -162,9 +162,17 @@ def evidence_from_delegated_sources(run, example):
         if item.get("source_status") == "unavailable":
             continue
         source = item.get("source")
-        if source not in source_tools:
+        # Exact name first, then the longest known alias contained in a descriptive name
+        # ("MongoDB operational events" -> "MongoDB").
+        tool = source_tools.get(source)
+        if tool is None:
+            text = str(source or "").lower()
+            matches = [key for key in source_tools if key and str(key).lower() in text]
+            if matches:
+                tool = source_tools[max(matches, key=len)]
+        if tool is None:
             unmapped.append(source)
-        elif source_tools[source] not in called:
+        elif tool not in called:
             undelegated.append(source)
     bad = unmapped + undelegated
     return {
@@ -191,6 +199,11 @@ def no_live_evidence_from_unavailable(run, example):
         if item.get("source_status") != "live":
             continue
         source = item.get("source")
-        if source_tools.get(source, source) in unavailable:
+        tool = source_tools.get(source)
+        if tool is None:
+            text = str(source or "").lower()
+            matches = [key for key in source_tools if key and str(key).lower() in text]
+            tool = source_tools[max(matches, key=len)] if matches else source
+        if tool in unavailable:
             bad.append(source)
     return {"score": 0 if bad else 1, "comment": f"live_from_unavailable={bad}"}

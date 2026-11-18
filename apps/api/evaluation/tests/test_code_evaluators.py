@@ -209,3 +209,44 @@ def test_each_evaluator_runs_standalone_from_its_source(name) -> None:
     exec(source, namespace)  # noqa: S102 - mirrors the LangSmith upload sandbox
     result = namespace[name](_wrap(GOOD_OUTPUTS, False), _wrap(FULL_REFERENCE, False))
     assert result["score"] == 1, result
+
+
+def _evidence(*items):
+    return _variant(report=_report(evidence=[dict(item) for item in items]))
+
+
+def test_delegated_sources_match_a_known_alias_inside_a_descriptive_source_name() -> None:
+    outputs = _evidence(
+        {"source": "Jira incident tickets", "detail": "INC-42", "source_status": "simulated"},
+        {"source": "github commits", "detail": "abc", "source_status": "simulated"},
+    )
+    assert _call(code.evidence_from_delegated_sources, outputs)["score"] == 1
+
+
+def test_delegated_sources_still_fail_for_a_named_specialist_that_was_not_called() -> None:
+    outputs = _evidence(
+        {"source": "Logs from CloudWatch", "detail": "x", "source_status": "simulated"},
+    )
+    reference = {**FULL_REFERENCE, "source_tools": {**FULL_REFERENCE["source_tools"]}}
+    result = _call(code.evidence_from_delegated_sources, outputs, reference)
+    assert result["score"] == 0
+    assert "undelegated" in result["comment"]
+
+
+def test_delegated_sources_still_fail_for_an_unknown_source() -> None:
+    outputs = _evidence({"source": "Slack", "detail": "x", "source_status": "simulated"})
+    result = _call(code.evidence_from_delegated_sources, outputs)
+    assert result["score"] == 0
+    assert "Slack" in result["comment"]
+
+
+def test_live_evidence_check_matches_aliases_inside_descriptive_source_names() -> None:
+    outputs = _evidence({"source": "Logs from CloudWatch", "detail": "x", "source_status": "live"})
+    assert _call(code.no_live_evidence_from_unavailable, outputs)["score"] == 0
+
+
+def test_source_aliases_include_specialist_agent_names() -> None:
+    from evaluation.scenarios.scenario_model import SOURCE_ALIASES
+
+    assert "Data Intelligence" in SOURCE_ALIASES["ask_data_intelligence"]
+    assert "IT Operations" in SOURCE_ALIASES["ask_it_operations"]

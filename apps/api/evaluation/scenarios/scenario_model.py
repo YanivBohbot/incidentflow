@@ -14,8 +14,8 @@ ALL_SPECIALISTS: frozenset[str] = frozenset(FINDING_MODELS)
 
 # Names the supervisor LLM tends to write as an evidence source, per delegation tool.
 SOURCE_ALIASES: Mapping[str, tuple[str, ...]] = {
-    "ask_it_operations": ("Jira",),
-    "ask_data_intelligence": ("MongoDB",),
+    "ask_it_operations": ("Jira", "IT Operations"),
+    "ask_data_intelligence": ("MongoDB", "Data Intelligence"),
     "ask_knowledge": ("Knowledge base", "Knowledge", "Pinecone"),
     "ask_github": ("GitHub",),
     "ask_cloudwatch": ("CloudWatch",),
