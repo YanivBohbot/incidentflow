@@ -18,10 +18,16 @@ pytest -q                                     # full suite (CI sets LANGSMITH_TR
 pytest tests/test_investigation_workflow.py   # one file
 pytest tests/test_investigation_workflow.py::test_<name>   # one test
 ruff check src tests scripts evaluation       # CI lints scripts/ and evaluation/ too
-ruff format --check src tests
+ruff format --check src tests evaluation
 alembic upgrade head
 alembic revision -m "add_incident_assignee"   # name revisions after the change
+python -m evaluation.run --suite all          # LangSmith experiments (real OpenAI + LangSmith)
+python -m evaluation.upload_evaluators        # upload code evaluators to the datasets
+python -m evaluation.summary                  # write docs/evaluation.md
 ```
+
+`apps/api/evaluation/` is the LangSmith evaluation package (see its README); the three
+`evaluation.*` commands call real OpenAI/LangSmith and are not part of `pytest`.
 
 Web (run from `apps/web`, Node 22): `npm ci`, `npm run dev`, `npm run lint` (oxlint),
 `npm run build` (`tsc -b && vite build`). The Vite dev server proxies `/api`, `/health`, and
@@ -109,6 +115,8 @@ Tests do not need live services: repositories use in-memory SQLite (`Base.metada
 workflow tests use `InMemorySaver`, and service/route tests inject fake workflow objects with an
 `ainvoke` method. Async tests use `@pytest.mark.anyio`. `apps/api/scripts/` holds manual
 run/verify/evaluate scripts that hit real integrations — they are not part of the test suite.
+`evaluation/tests/` holds offline tests of the evaluation code (collected by `pytest`); the
+experiments themselves (`python -m evaluation.run`) hit real OpenAI/LangSmith and never run in pytest.
 
 ## Conventions
 

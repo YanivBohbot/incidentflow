@@ -394,40 +394,36 @@ The test suite runs without any external service. It uses in-memory SQLite, Lang
 cd apps/api
 pytest -q                                        # full suite
 pytest tests/test_investigation_workflow.py      # a single file
-ruff check src tests scripts                     # lint
-ruff format --check src tests                    # formatting
+ruff check src tests scripts evaluation           # lint
+ruff format --check src tests evaluation        # formatting
 
 cd ../web
 npm run lint
 npm run build
 ```
 
-`apps/api/evaluation/` holds the evaluation scripts that run against real services
-(`legacy_routing.py`, `retrieval.py`); `apps/api/scripts/` has run and verify scripts
-for each live integration.
+`apps/api/evaluation/` holds the LangSmith evaluation tooling and `apps/api/scripts/` has run
+and verify scripts for each live integration.
 
 ### LangSmith evaluation
 
-`evaluation/legacy_reports.py` runs the real investigation workflow on a LangSmith
-dataset of incidents with known root causes, and scores every report as a LangSmith experiment:
-
-| Evaluator                     | Type         | Checks                                                     |
-| ----------------------------- | ------------ | ---------------------------------------------------------- |
-| `required_specialists`        | code         | The specialists the incident depends on were consulted     |
-| `evidence_attributed`         | code         | The report has evidence and every item names its source    |
-| `no_fabricated_live_evidence` | code         | Disabled integrations are never reported as live evidence  |
-| `root_cause_identified`       | LLM-as-judge | The report identifies the expected root cause              |
-| `safe_proposed_actions`       | LLM-as-judge | Proposed actions are relevant and avoid known unsafe steps |
+`python -m evaluation.run` runs the real supervisor and investigation workflow over two LangSmith
+datasets (supervisor trajectory, 8 scenarios; investigation reports with known root causes,
+9 scenarios) and scores each as an experiment. Code evaluators (required/forbidden specialists,
+call limits, graph path, evidence attribution) are uploaded to the datasets; LLM judges (root
+cause, grounding, safe remediation, investigation path) run locally.
 
 ```bash
 cd apps/api
-python -m evaluation.legacy_reports                       # creates the dataset if missing
-python -m evaluation.legacy_reports --experiment-prefix v2  # compare in LangSmith
+pip install -e ".[dev,eval]"
+python -m evaluation.run --suite all                 # syncs datasets, 3 repetitions
+python -m evaluation.upload_evaluators --dry-run     # then without --dry-run to upload
+python -m evaluation.summary                         # writes docs/evaluation.md
 ```
 
-Jira, MongoDB, and GitHub are disabled by default, so the experiment needs only OpenAI, Pinecone
-(with the synthetic playbooks ingested), and `LANGSMITH_API_KEY`. Pass `--live-integrations` to
-keep them as configured in `.env`.
+Integrations are replaced by frozen fixtures by default, so the experiments need only OpenAI and
+`LANGSMITH_API_KEY`. Pass `--live-integrations` to use the integrations configured in `.env`. See
+`apps/api/evaluation/README.md` for every command and evaluator.
 
 GitHub Actions runs Ruff and pytest for the API, and lint and a production build for the web app,
 on every push and pull request.
