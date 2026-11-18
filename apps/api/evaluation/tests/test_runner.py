@@ -1,4 +1,5 @@
 import asyncio
+import os
 from types import SimpleNamespace
 from typing import Any
 
@@ -167,3 +168,18 @@ async def test_run_suite_passes_only_judges_and_repetitions(
     out = capsys.readouterr().out
     assert "safe_remediation: 1.00" in out
     assert "root_cause_identified: n/a (1 errored)" in out
+
+
+def test_load_langsmith_environment_exports_only_langsmith_entries(tmp_path, monkeypatch) -> None:
+    from evaluation.run import load_langsmith_environment
+
+    env_file = tmp_path / ".env"
+    env_file.write_text("LANGSMITH_API_KEY=abc\nLANGSMITH_TRACING=true\nOTHER=1\n")
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    monkeypatch.delenv("OTHER", raising=False)
+    monkeypatch.setenv("LANGSMITH_TRACING", "false")
+    load_langsmith_environment(env_file)
+    assert os.environ["LANGSMITH_API_KEY"] == "abc"
+    assert os.environ["LANGSMITH_TRACING"] == "false"
+    assert "OTHER" not in os.environ
+    monkeypatch.delenv("LANGSMITH_API_KEY")
