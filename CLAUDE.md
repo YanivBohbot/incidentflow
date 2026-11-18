@@ -11,7 +11,7 @@ LangGraph/LangChain multi-agent workflow over Jira, MongoDB, Pinecone, GitHub, a
 API (run from `apps/api`, Python 3.12 or 3.13):
 
 ```powershell
-pip install -e ".[dev]"
+pip install -e ".[dev,eval]"
 uvicorn incidentflow.main:app --reload        # needs DATABASE_URL + OPENAI_API_KEY in apps/api/.env
 python -m incidentflow.worker                 # runs queued investigations; needs a queue (see below)
 pytest -q                                     # full suite (CI sets LANGSMITH_TRACING=false)

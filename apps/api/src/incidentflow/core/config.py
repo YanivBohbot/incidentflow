@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr
     openai_model: str = "gpt-4.1-mini"
     openai_timeout_seconds: float = 60
+    eval_judge_model: str = "gpt-4.1"
     langsmith_tracing: bool = False
     langsmith_project: str = "incidentflow-development"
     langsmith_api_key: str | None = None
