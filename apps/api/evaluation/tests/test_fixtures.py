@@ -52,11 +52,27 @@ def test_unavailable_finding_validates_against_every_finding_model() -> None:
         assert finding.summary.endswith(" is unavailable in this evaluation scenario.")
 
 
-def test_build_investigation_supervisor_accepts_injected_tools(monkeypatch) -> None:
+def test_build_investigation_supervisor_accepts_injected_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     get_settings.cache_clear()
     try:
-        agent = build_investigation_supervisor(tools=fixture_delegations({}, []))
+        stubs = fixture_delegations({}, [])
+        agent = build_investigation_supervisor(tools=stubs)
     finally:
         get_settings.cache_clear()
-    assert agent is not None
+    bound = agent.nodes["tools"].bound.tools_by_name
+    assert set(bound) == {t.name for t in stubs}
+    assert all(bound[t.name] is t for t in stubs)
+
+
+@pytest.mark.anyio
+async def test_fixture_delegations_accept_every_optional_argument_of_the_real_tools() -> None:
+    log: CallLog = []
+    stubs = {t.name: t for t in fixture_delegations({}, log)}
+    for real in DELEGATION_TOOLS:
+        args = {name: f"{name}-value" for name in real.args}
+        await stubs[real.name].ainvoke(args)
+        assert log[-1] == {"tool": real.name, "args": args}
+    assert {"service_name", "incident_id"} <= set(log[-1]["args"])

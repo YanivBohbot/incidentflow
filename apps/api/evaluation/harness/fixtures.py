@@ -53,8 +53,8 @@ def fixture_delegations(findings: Mapping[str, str], call_log: CallLog) -> list[
     """Build one stub per real delegation tool that returns its frozen finding JSON."""
 
     def build(real: BaseTool) -> BaseTool:
-        async def stub(incident_context: str) -> str:
-            call_log.append({"tool": real.name, "args": {"incident_context": incident_context}})
+        async def stub(**kwargs: Any) -> str:
+            call_log.append({"tool": real.name, "args": kwargs})
             return findings.get(real.name) or unavailable_finding_json(real.name)
 
         return StructuredTool.from_function(
